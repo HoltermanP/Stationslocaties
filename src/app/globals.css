@@ -22,7 +22,7 @@ body {
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
   cursor: pointer;
 }
-.lqs-marker.voorkeur { background: #059669; }
+.lqs-marker.voorkeur { background: #059669; width: auto; min-width: 28px; padding: 0 8px; border-radius: 14px; border-width: 3px; z-index: 2; font-weight: 700; }
 .lqs-marker.afgevallen { background: #b91c1c; }
 .lqs-marker.nieuw { background: #64748b; }
 .lqs-marker.net { background: #facc15; color: #0f172a; }

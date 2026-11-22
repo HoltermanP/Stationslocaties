@@ -69,14 +69,25 @@ export default function Plaat({ w, h, bbox, basis = "topo", rustig, lagen = [], 
       <svg width={w} height={h} style={{ position: "absolute", inset: 0 }} fontFamily="Arial, sans-serif">
         {zoekgebied && <polygon points={pad(zoekgebied.coordinates[0])} fill="none" stroke="#E5007D" strokeWidth={2.5} strokeDasharray="9 5" />}
         {traces && kandidaten.map((k) => k.trace && <polyline key={k.id} points={pad(k.trace.lijn)} fill="none" stroke="#7c3aed" strokeWidth={2.5} strokeDasharray="2 4" strokeLinecap="round" />)}
-        {kandidaten.map((k) => {
+        {/* de voorkeurslocatie als laatste, zodat hij boven de andere locaties ligt */}
+        {[...kandidaten].sort((a, b) => Number(a.id === voorkeurId) - Number(b.id === voorkeurId)).map((k) => {
           const vk = k.id === voorkeurId, kleur = vk ? "#00A651" : k.inUitgesloten.length ? "#b91c1c" : "#E5007D";
           const [cx, cy] = px(naarRD(k.punt));
           const label = labels[k.id];
+          const zichtbaar = cx > -20 && cx < w + 20 && cy > -30 && cy < h + 20;
+          const tekst = vk ? `★ ${label ?? ""} Voorkeur`.replace("  ", " ") : label;
+          const breed = vk ? 14 + tekst!.length * 6.2 : 22;
           return (
             <g key={k.id}>
-              <polygon points={pad(k.kavel.coordinates[0])} fill={kleur} fillOpacity={klein ? 0.18 : 0.5} stroke={kleur} strokeWidth={klein ? 2.5 : 1.5} />
-              {label && !klein && <><circle cx={cx} cy={cy - 16} r={11} fill={kleur} stroke="#fff" strokeWidth={2} /><text x={cx} y={cy - 12} textAnchor="middle" fontSize={12} fontWeight={700} fill="#fff">{label}</text><line x1={cx} y1={cy - 5} x2={cx} y2={cy} stroke={kleur} strokeWidth={2} /></>}
+              {vk && <polygon points={pad(k.kavel.coordinates[0])} fill="none" stroke="#fff" strokeWidth={klein ? 6.5 : 5} strokeLinejoin="round" />}
+              <polygon points={pad(k.kavel.coordinates[0])} fill={kleur} fillOpacity={klein ? 0.18 : vk ? 0.65 : 0.5} stroke={kleur} strokeWidth={vk ? (klein ? 4 : 3) : klein ? 2.5 : 1.5} />
+              {zichtbaar && tekst && (!klein || kandidaten.length > 1) && (
+                <>
+                  <line x1={cx} y1={cy - 5} x2={cx} y2={cy} stroke={kleur} strokeWidth={2} />
+                  <rect x={cx - breed / 2} y={cy - (vk ? 30 : 27)} width={breed} height={vk ? 22 : 22} rx={11} fill={kleur} stroke="#fff" strokeWidth={vk ? 2.5 : 2} />
+                  <text x={cx} y={cy - (vk ? 15 : 12)} textAnchor="middle" fontSize={vk ? 12.5 : 12} fontWeight={700} fill="#fff">{tekst}</text>
+                </>
+              )}
             </g>
           );
         })}

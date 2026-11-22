@@ -313,7 +313,8 @@ export default function Kaart(p: Props) {
     );
     ks.forEach((k) => {
       const kort = k.bron === "analyse" ? k.naam.replace("Locatie ", "") : "★";
-      zet(k.punt, kort, k.id === p.voorkeurId ? "voorkeur" : k.inUitgesloten.length ? "afgevallen" : "", k.naam, () => actueel.current.onKandidaat?.(k.id));
+      const tekst = k.id === p.voorkeurId ? `★ ${kort === "★" ? "Voorkeur" : kort}` : kort;
+      zet(k.punt, tekst, k.id === p.voorkeurId ? "voorkeur" : k.inUitgesloten.length ? "afgevallen" : "", k.naam, () => actueel.current.onKandidaat?.(k.id));
     });
     // aangedragen locaties die nog niet door de analyse zijn beoordeeld
     (p.aangedragen ?? []).filter((a) => !ks.some((k) => k.bron === "aangedragen" && k.naam === a.naam)).forEach((a) => zet(a.punt, "★", "nieuw", `${a.naam} (nog niet geanalyseerd)`));

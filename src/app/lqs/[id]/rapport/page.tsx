@@ -60,6 +60,8 @@ export default function RapportPagina() {
           </div>
           <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
             <span><i className="mr-1 inline-block h-2.5 w-2.5 align-middle" style={{ background: "#22c55e" }} />kavel inpasbaar</span>
+            <span><i className="mr-1 inline-block h-2.5 w-2.5 align-middle" style={{ background: "#0f172a" }} />onderzochte locatie</span>
+            {voorkeur && <span className="font-semibold text-emerald-700"><i className="mr-1 inline-block h-2.5 w-2.5 align-middle" style={{ background: "#059669" }} />★ voorkeurslocatie</span>}
             {lagen.map((x) => <span key={x.id}><i className="mr-1 inline-block h-2.5 w-2.5 align-middle" style={{ background: x.kleur }} />{x.naam}</span>)}
           </div>
           <table className="w-full break-inside-avoid text-xs [&_td]:pr-2 [&_th]:pr-2">
@@ -123,7 +125,7 @@ export default function RapportPagina() {
       {kop("advies")}{tekst("advies")}
       {voorkeur && (
         <div className="my-3 h-[360px] break-inside-avoid border border-slate-300">
-          <Kaart statisch zoekgebied={l.zoekgebied} kandidaten={[voorkeur]} voorkeurId={voorkeur.id} focus={voorkeur.punt} start={{ lucht: true, kadaster: true }} />
+          <Kaart statisch zoekgebied={l.zoekgebied} kandidaten={l.kandidaten} voorkeurId={voorkeur.id} focus={voorkeur.punt} start={{ lucht: true, kadaster: true }} />
         </div>
       )}
       {voorkeur && (
