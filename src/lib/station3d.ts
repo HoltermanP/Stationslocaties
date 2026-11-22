@@ -4,6 +4,9 @@ import type { Kandidaat, LngLat } from "./types";
 
 type Blok = { type: "Feature"; properties: { b: number; h: number; kleur: string; laag: "vast" | "hek" | "groen"; /** onderdeel (sleutel uit KLEUR, anders "gevel"), voor de materiaalkeuze in de realistische weergave */ soort: string }; geometry: { type: "Polygon"; coordinates: number[][][] } };
 
+/** Vrije kabelruimte aan de voorzijde (programma van eisen Enexis, zie REVIEW_PUNTEN): het gebouw staat zo dicht mogelijk bij de wegzijde. */
+const KABELRUIMTE = 5;
+
 const KLEUR = {
   terrein: "#a9a59c", pad: "#8b8881", inrit: "#6e6e6c", plint: "#4a4e52", gevel: "#8a5f4a", dak: "#2e3236", deur: "#1f4a3a", rooster: "#c6c9cd",
   hek: "#27352e", paal: "#232b27", trafo: "#5f6d66", beton: "#bcb9b0", haag: "#3f6a39", stam: "#5a4535", kroon1: "#4b7a3e", kroon2: "#5c8c49",
@@ -105,13 +108,14 @@ export function stationModel(k: Kandidaat, typeId: string, beplanting: boolean, 
   blok(0, 0, U, V, 0, 0.06, KLEUR.terrein);
   blok(uc - 2.5, -6, uc + 2.5, 0, 0, 0.05, KLEUR.inrit);
 
-  // gebouw: lange zijde langs de lange zijde van de kavel, achter op het terrein
+  // gebouw: lange zijde langs de lange zijde van de kavel, vooraan op het terrein
   // opzij volstaat bij een TVS een halve meter; het gebouw wordt alleen ingekort als de kavel echt te klein is
   const gU = Math.max(2, Math.min(U >= V ? type.gebouw.l : type.gebouw.b, U - 2 * (inzet + (type.hek ? vrij : 0.5))));
   // staat een TVS met zijn kopse kant naar de voorzijde (smalle kavel van 12 m), dan volstaat ook in de diepte een halve meter
   const gV = Math.max(2, Math.min(U >= V ? type.gebouw.b : type.gebouw.l, V - 2 * (inzet + (type.hek || U >= V ? vrij : 0.5))));
   const h = type.gebouw.h;
-  const g0 = uc - gU / 2, g1 = uc + gU / 2, a1 = Math.max(V - inzet - vrij, inzet + 0.5 + gV), a0 = a1 - gV;
+  // gebouw tegen de voorzijde aan, met de vrije kabelruimte ervoor; alleen een te kleine kavel schuift het gebouw verder naar achteren
+  const g0 = uc - gU / 2, g1 = uc + gU / 2, a0 = Math.max(inzet + 0.5, Math.min(KABELRUIMTE, V - inzet - vrij - gV)), a1 = a0 + gV;
   const gevelKleur = (GEVELS.find((g) => g.id === gevel) ?? GEVELS[0]).kleur;
   blok(uc - 2, inzet, uc + 2, a0, 0.06, 0.09, KLEUR.pad);
   if (!type.gebouw.trafos) {
