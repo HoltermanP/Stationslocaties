@@ -72,6 +72,12 @@ export default function Portfolio() {
             <option value="groningen">Groningen Eemspoort – TVS 20 velden</option>
             <option value="eindhoven">Eindhoven De Hurk – TVS 23 velden</option>
             <option value="venlo">Venlo Trade Port – TVRS2</option>
+            <option value="assen">Assen Marsdijk – TVS 19 velden (opgeleverd)</option>
+            <option value="hengelo">Hengelo Westermaat – TVRS3 (opgeleverd)</option>
+            <option value="roosendaal">Roosendaal Borchwerf – TVS (review)</option>
+            <option value="tilburg">Tilburg Katsbogten – TVS 23 velden (rapport)</option>
+            <option value="maastricht">Maastricht Beatrixhaven – TVRS2 (opgeleverd, na deadline)</option>
+            <option value="emmen">Emmen Bargermeer – TVS 20 velden (review)</option>
           </select>
           <Link href="/lqs/nieuw" className="knop groen">Nieuwe LQS</Link>
         </div>

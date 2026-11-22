@@ -62,7 +62,25 @@ function stuk(lijn: number[][], van: number, tot: number) {
   return uit;
 }
 
-export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; klic: KlicInfo } | null> {
+/** Regionale kenmerken van de simulatie: welke beheerders er zijn en welke zware of bijzondere leidingen het gebied kruisen. */
+export type KlicOpties = {
+  waterbedrijf?: string;
+  /** stadsverwarming langs de wegen */
+  warmte?: boolean;
+  /** ondergrondse 150 kV-kabel van de landelijke netbeheerder */
+  hoogspanning?: boolean;
+  /** buisleiding met gevaarlijke inhoud (bijv. ethyleen) */
+  buisleiding?: boolean;
+  /** persleiding van een rioolgemaal */
+  rioolDruk?: boolean;
+  /** leiding zonder bekende eigenaar */
+  wees?: boolean;
+  /** hoogste druk van de gastransportleiding */
+  gasTransport?: string;
+  waterschap?: string;
+};
+
+export async function simuleerKlic(l: Lqs, opties: KlicOpties = {}): Promise<{ eigenLagen: EigenLaag[]; klic: KlicInfo } | null> {
   if (!l.zoekgebied) return null;
   const rnd = reeks(l.code ?? l.id), tussen = ([a, b]: [number, number]) => Math.round((a + rnd() * (b - a)) * 100) / 100, kies = <T,>(x: T[]) => x[Math.floor(rnd() * x.length)];
   const p = l.zoekgebied.coordinates[0].map(naarRD), xs = p.map((c) => c[0]), ys = p.map((c) => c[1]);
@@ -73,9 +91,14 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
   const themas: Record<string, Lijn[]> = {};
   const voeg = (thema: string, coordinates: number[][], props: Record<string, unknown>) => (themas[thema] ??= []).push({ coordinates, props: { thema, gesimuleerd: true, ...props } });
 
+  const water = opties.waterbedrijf ?? "Vitens (drinkwater)";
+  const liggingen = LIGGING.map((t) => (t.thema === "water" ? { ...t, beheerder: water } : t));
+  if (opties.warmte) liggingen.push({ thema: "warmte", afstand: -2.8, vanaf: 180, beheerder: "Warmtebedrijf (stadsverwarming)", diepte: [1.0, 1.4], kenmerk: ["DN 150 voorgeïsoleerd, 120/70 °C", "DN 200 voorgeïsoleerd, 120/70 °C"], materiaal: ["Staal (voorgeïsoleerd)"], dwars: 0 });
+  if (opties.rioolDruk) liggingen.push({ thema: "rioolOnderOverOfOnderdruk", afstand: 6.6, vanaf: 220, beheerder: "Gemeente (riolering, persleiding)", diepte: [1.2, 1.8], kenmerk: ["Ø 160 persleiding", "Ø 225 persleiding"], materiaal: ["PE", "PVC"], dwars: 0 });
+
   for (const weg of wegen) {
     const len = lengte(weg);
-    for (const t of LIGGING) {
+    for (const t of liggingen) {
       if (len < t.vanaf) continue;
       const hoofd = evenwijdig(weg, t.afstand);
       const eigen = { beheerder: t.beheerder, materiaal: kies(t.materiaal), kenmerk: kies(t.kenmerk), aanlegjaar: 1965 + Math.floor(rnd() * 58) };
@@ -99,8 +122,18 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
   // transportleiding: recht door het zoekgebied, van een kwart van de westrand naar driekwart van de oostrand
   const [x0, y0, x1, y1] = vak;
   voeg("gasHogeDruk", [[x0, y0 + 0.3 * (y1 - y0)], [x0 + 0.45 * (x1 - x0), y0 + 0.42 * (y1 - y0)], [x1, y0 + 0.78 * (y1 - y0)]], {
-    beheerder: "Gasunie Transport Services", kenmerk: "Ø 508, 40 bar", materiaal: "Staal", diepteM: 1.2, aanlegjaar: 1974, aard: "transportleiding",
+    beheerder: "Gasunie Transport Services", kenmerk: `Ø 508, ${opties.gasTransport ?? "40 bar"}`, materiaal: "Staal", diepteM: 1.2, aanlegjaar: 1974, aard: "transportleiding",
   });
+  const b = (f: number, g: number) => [x0 + f * (x1 - x0), y0 + g * (y1 - y0)];
+  if (opties.hoogspanning) {
+    voeg("hoogspanning", [b(0.22, 1), b(0.3, 0.6), b(0.36, 0.25), b(0.34, 0)], { beheerder: "TenneT (hoogspanning)", kenmerk: "150 kV, 3x1x1200 Cu-kabel", materiaal: "XLPE", diepteM: 1.6, aanlegjaar: 2009, aard: "transportkabel" });
+  }
+  if (opties.buisleiding) {
+    voeg("buisleidingGevaarlijkeInhoud", [b(0, 0.12), b(0.5, 0.2), b(1, 0.1)], { beheerder: "Buisleidingbeheerder (gesimuleerd)", kenmerk: "Ø 324, ethyleen, 100 bar", materiaal: "Staal", diepteM: 1.5, aanlegjaar: 1983, aard: "transportleiding" });
+  }
+  if (opties.wees) {
+    voeg("wees", [b(0.6, 0.55), b(0.72, 0.52), b(0.8, 0.58)], { beheerder: "Onbekend (weesleiding)", kenmerk: "Buis, inhoud onbekend", materiaal: "Onbekend", diepteM: 0.9, aanlegjaar: 1958, aard: "weesleiding" });
+  }
 
   const afger = (c: number[][]) => c.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
   const lagen: EigenLaag[] = Object.entries(themas).map(([thema, lijnen]) => {
@@ -116,10 +149,10 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
     };
   });
   const klic: KlicInfo = {
-    meldnummer: `SIMULATIE-${l.code}`,
+    meldnummer: `SIM-${String(new Date().getFullYear()).slice(2)}O${String(Math.floor(rnd() * 1e7)).padStart(7, "0")}`,
     ingelezenOp: new Date().toISOString(),
     bron: "simulatie",
-    netbeheerders: ["Enexis (elektriciteit en gas)", "Gasunie Transport Services (gas hoge druk)", "Vitens (drinkwater)", "Gemeente (riolering)", "Glasvezelnet (telecom)"].map((naam, i) => ({ code: `SIM${i + 1}`, naam: `${naam} – gesimuleerd`, geleverd: true })),
+    netbeheerders: ["Enexis (elektriciteit en gas)", "Gasunie Transport Services (gas hoge druk)", water, `Gemeente ${l.gemeente || ""} (riolering)`.replace("  ", " "), opties.waterschap ?? "Waterschap (watergangen en waterkeringen)", "Glasvezelnet (telecom)", "Koper- en kabelnet (telecom)", ...(opties.warmte ? ["Warmtebedrijf (stadsverwarming)"] : []), ...(opties.hoogspanning ? ["TenneT (hoogspanning)"] : []), ...(opties.buisleiding ? ["Buisleidingbeheerder (gevaarlijke inhoud)"] : [])].map((naam, i) => ({ code: `SIM${i + 1}`, naam: `${naam} – gesimuleerd`, geleverd: true })),
     themas: Object.entries(themas).map(([thema, lijnen]) => ({ thema, naam: (THEMA[thema] ?? { naam: thema }).naam, leidingen: lijnen.length })),
   };
   return { eigenLagen: [...l.eigenLagen.filter((e) => !e.id.startsWith("klic-")), ...lagen], klic };
