@@ -35,8 +35,47 @@ export function kavelKader(k: Kandidaat) {
   return {
     U, V, midden,
     rd: (u: number, v: number): number[] => [a[0] + u * tu[0] + v * tv[0], a[1] + u * tu[1] + v * tv[1]],
+    /** Plaats langs de voorzijde (u) waar het kabeltracé de kavel verlaat; zonder tracé het midden */
+    uitgang: buiten ? Math.min(U, Math.max(0, (buiten[0] - a[0]) * tu[0] + (buiten[1] - a[1]) * tu[1])) : U / 2,
     /** Kijkrichting (bearing) waarbij de voorzijde van het station naar de camera is gekeerd */
     voor: ((Math.atan2(tv[0], tv[1]) * 180) / Math.PI + 360) % 360,
+  };
+}
+
+/** Maten van de kavel zoals hij nu ligt: [langs de voorzijde, diepte]. */
+export const kavelMaat = (k: Kandidaat): [number, number] => { const { U, V } = kavelKader(k); return [U, V]; };
+
+/** Wijkt de kavel van de locatie meer dan 0,3 m af van de gevraagde kavelmaat? */
+export function kavelWijktAf(k: Kandidaat, kavelB: number, kavelL: number) {
+  const [U, V] = kavelMaat(k), L = Math.max(kavelB, kavelL), B = Math.min(kavelB, kavelL);
+  return Math.abs(Math.max(U, V) - L) > 0.3 || Math.abs(Math.min(U, V) - B) > 0.3;
+}
+
+/**
+ * Brengt de kavel van een locatie terug tot de gevraagde maat, bijvoorbeeld na de keuze voor een kleiner stationstype.
+ * De nieuwe kavel ligt binnen de oude (die al vrij van uitsluitingen was), tegen de voorzijde aan en zo dicht mogelijk bij
+ * het punt waar het kabeltracé de kavel verlaat: geen ongebruikt terrein tussen weg en station en het kortste tracé.
+ * De lange zijde (met de deuren en de kabelruimte ervoor) ligt bij voorkeur langs de voorzijde.
+ * Geeft null als de kavel al klopt of de gevraagde maat niet binnen de oude kavel past (dan is een nieuwe analyse nodig).
+ */
+export function krimpKavel(k: Kandidaat, kavelB: number, kavelL: number): Kandidaat | null {
+  if (!kavelWijktAf(k, kavelB, kavelL)) return null;
+  const { U, V, rd, uitgang } = kavelKader(k);
+  const L = Math.max(kavelB, kavelL), B = Math.min(kavelB, kavelL);
+  const past = (w: number, d: number) => w <= U + 0.3 && d <= V + 0.3;
+  const [w, d] = past(L, B) ? [L, B] : past(B, L) ? [B, L] : [0, 0];
+  if (!w) return null;
+  const u0 = Math.max(0, Math.min(U - w, uitgang - w / 2)), u1 = Math.min(U, u0 + w), v1 = Math.min(V, d);
+  const hoeken = [rd(u0, 0), rd(u1, 0), rd(u1, v1), rd(u0, v1)];
+  const midden = rd((u0 + u1) / 2, v1 / 2);
+  const { beeld: _vervalt, ...rest } = k; // het vastgelegde 3D-aanzicht hoort bij de oude kavel
+  void _vervalt;
+  return {
+    ...rest,
+    kavel: { type: "Polygon", coordinates: [[...hoeken, hoeken[0]].map(naarWGS)] } as Kandidaat["kavel"],
+    punt: naarWGS(midden) as LngLat,
+    rd: [Math.round(midden[0]), Math.round(midden[1])],
+    ligging: `${w >= d ? "lange" : "korte"} zijde aan de voorzijde; kavel verkleind tot ${L.toLocaleString("nl-NL")} × ${B.toLocaleString("nl-NL")} m binnen de eerder ingepaste kavel`,
   };
 }
 
@@ -68,9 +107,10 @@ export function stationModel(k: Kandidaat, typeId: string, beplanting: boolean, 
   // gebouw: lange zijde langs de lange zijde van de kavel, achter op het terrein
   // opzij volstaat bij een TVS een halve meter; het gebouw wordt alleen ingekort als de kavel echt te klein is
   const gU = Math.max(2, Math.min(U >= V ? type.gebouw.l : type.gebouw.b, U - 2 * (inzet + (type.hek ? vrij : 0.5))));
-  const gV = Math.max(2, Math.min(U >= V ? type.gebouw.b : type.gebouw.l, V - 2 * (inzet + vrij)));
+  // staat een TVS met zijn kopse kant naar de voorzijde (smalle kavel van 12 m), dan volstaat ook in de diepte een halve meter
+  const gV = Math.max(2, Math.min(U >= V ? type.gebouw.b : type.gebouw.l, V - 2 * (inzet + (type.hek || U >= V ? vrij : 0.5))));
   const h = type.gebouw.h;
-  const g0 = uc - gU / 2, g1 = uc + gU / 2, a1 = V - inzet - vrij, a0 = a1 - gV;
+  const g0 = uc - gU / 2, g1 = uc + gU / 2, a1 = Math.max(V - inzet - vrij, inzet + 0.5 + gV), a0 = a1 - gV;
   const gevelKleur = (GEVELS.find((g) => g.id === gevel) ?? GEVELS[0]).kleur;
   blok(uc - 2, inzet, uc + 2, a0, 0.06, 0.09, KLEUR.pad);
   if (!type.gebouw.trafos) {

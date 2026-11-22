@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
+import { krimpKavel } from "./station3d";
 import { DOORLOOPTIJD_DAGEN, REVIEW_PUNTEN, STANDAARD_GEWICHTEN, STATION_TYPEN } from "./config";
 import { getDb, schema } from "./db";
 import type { Lqs } from "./types";
@@ -72,6 +73,17 @@ export async function wijzig(id: string, wijziging: Record<string, unknown>): Pr
   if ("status" in set) {
     const huidig = await haal(id);
     if (huidig && huidig.status !== set.status) set.historie = [...(huidig.historie ?? []), { status: set.status, op: new Date().toISOString() }];
+  }
+  // andere kavelmaat (bv. een kleiner stationstype): de kavels van de bestaande locaties krimpen mee, zodat kaart, 3D-beeld
+  // en rapport geen terrein tonen dat het station niet nodig heeft; past de nieuwe maat niet, dan blijft de kavel staan
+  if (("kavelB" in set || "kavelL" in set) && !("kandidaten" in set)) {
+    const huidig = await haal(id);
+    if (huidig?.kandidaten?.length) {
+      const B = Number(set.kavelB ?? huidig.kavelB), L = Number(set.kavelL ?? huidig.kavelL);
+      let gewijzigd = false;
+      const kandidaten = huidig.kandidaten.map((k) => { const n = krimpKavel(k, B, L); if (n) gewijzigd = true; return n ?? k; });
+      if (gewijzigd) set.kandidaten = kandidaten;
+    }
   }
   await db.update(T).set(set).where(eq(T.id, id));
   return haal(id);

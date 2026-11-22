@@ -1,20 +1,26 @@
 // Stationstypen volgens de openbare voorlichting van Enexis. De LQS gaat over MS/MS-stations: het transportverdeelstation
 // (TVS, zonder transformator) en het transportverdeelregelstation (TVRS, met regeltransformatoren 20/10 kV).
-// Bronnen: standaardtemplate LQS (TVS 14,5 m); "Menukaart midden- en laagspanningsstations" (Enexis, april 2024) voor TVS 19
+// Bronnen: standaardtemplate LQS (TVS 14,5 m); flyer "Een nieuw transportverdeelstation in uw omgeving" (Enexis, versie 1.0
+// juni 2024) voor het TVS met 20 schakelkasten; "Menukaart midden- en laagspanningsstations" (Enexis, april 2024) voor TVS 19
 // en 23 velden; folder Regelstation (juni 2024) en de LQS Lieshout (juli 2025) voor TVRS2 en TVRS3.
 // Het zijn voorlichtingsmaten, geen ontwerpkader; de kavelmaat is per LQS aan te passen.
 // gebouw = buitenmaten boven maaiveld (kort × lang × hoog, m); bij een TVRS is dat het hele complex van schakelruimtes en trafocellen.
+// velden = aantal schakelvelden; gebouw.kelder = diepte van de kelderbak onder maaiveld (m), null als de bron die niet noemt.
 // woningAfstand = afstand tot woningen in de uitsluitingsanalyse: 50 m richtafstand (VNG) bij transformatoren, 10 m bij een TVS.
 const FOLDER_TVS = "https://www.enexis.nl/-/media/ruimte-en-recht/pdf/folder-transportverdeelstation.pdf";
 const FOLDER_TVRS = "https://www.enexis.nl/-/media/ruimte-en-recht/pdf/folder-regelstation.pdf";
 export const STATION_TYPEN = [
   // perceel 20,3 × 17,7 m = 360 m² en gebouw 14,5 × 3,7 m uit de standaardtemplate LQS
-  { id: "tvs", naam: "Transportverdeelstation (TVS, 21 velden – maten template LQS)", kavelB: 17.7, kavelL: 20.3, hek: false, woningAfstand: 10, folder: FOLDER_TVS, gebouw: { b: 3.7, l: 14.5, h: 3.2, deuren: 2, trafos: 0 } },
-  { id: "tvs19", naam: "Transportverdeelstation (TVS, 19 velden)", kavelB: 12, kavelL: 17.5, hek: false, woningAfstand: 10, folder: FOLDER_TVS, gebouw: { b: 3.7, l: 13.5, h: 3.7, deuren: 2, trafos: 0 } },
-  { id: "tvs23", naam: "Transportverdeelstation (TVS, 23 velden)", kavelB: 12, kavelL: 20, hek: false, woningAfstand: 10, folder: FOLDER_TVS, gebouw: { b: 3.7, l: 16.1, h: 3.7, deuren: 2, trafos: 0 } },
+  { id: "tvs", naam: "Transportverdeelstation (TVS, 21 velden – maten template LQS)", kavelB: 17.7, kavelL: 20.3, hek: false, woningAfstand: 10, folder: FOLDER_TVS, velden: 21, gebouw: { b: 3.7, l: 14.5, h: 3.2, kelder: 2.2 as number | null, deuren: 2, trafos: 0 } },
+  // flyer juni 2024: 20 schakelkasten, gebouw 14,5 × 3,7 m, 3,7 m hoog en 2,2 m diep, standaard donkergroen, in totaal circa 222 m²
+  // ruimtebeslag inclusief de kabelruimte in de grond. De flyer geeft alleen de oppervlakte; de verdeling 18,5 × 12 m is afgeleid
+  // (gebouw + 2 m aan beide kopse kanten, diepte 12 m zoals de kavels van 19 en 23 velden in de menukaart) en dus een aanname.
+  { id: "tvs20", naam: "Transportverdeelstation (TVS, 20 velden – flyer juni 2024, 222 m²)", kavelB: 12, kavelL: 18.5, hek: false, woningAfstand: 10, folder: FOLDER_TVS, velden: 20, gebouw: { b: 3.7, l: 14.5, h: 3.7, kelder: 2.2, deuren: 2, trafos: 0 } },
+  { id: "tvs19", naam: "Transportverdeelstation (TVS, 19 velden)", kavelB: 12, kavelL: 17.5, hek: false, woningAfstand: 10, folder: FOLDER_TVS, velden: 19, gebouw: { b: 3.7, l: 13.5, h: 3.7, kelder: null, deuren: 2, trafos: 0 } },
+  { id: "tvs23", naam: "Transportverdeelstation (TVS, 23 velden)", kavelB: 12, kavelL: 20, hek: false, woningAfstand: 10, folder: FOLDER_TVS, velden: 23, gebouw: { b: 3.7, l: 16.1, h: 3.7, kelder: null, deuren: 2, trafos: 0 } },
   // perceel circa 1520 m²; de verdeling 40 × 38 m is niet uit de bron zelf bevestigd
-  { id: "tvrs2", naam: "Transportverdeelregelstation (TVRS2, 2 transformatoren)", kavelB: 38, kavelL: 40, hek: true, woningAfstand: 50, folder: FOLDER_TVRS, gebouw: { b: 14.5, l: 20, h: 5, deuren: 2, trafos: 2 } },
-  { id: "tvrs3", naam: "Transportverdeelregelstation (TVRS3, 3 transformatoren)", kavelB: 38, kavelL: 49, hek: true, woningAfstand: 50, folder: FOLDER_TVRS, gebouw: { b: 14.5, l: 29, h: 5, deuren: 3, trafos: 3 } },
+  { id: "tvrs2", naam: "Transportverdeelregelstation (TVRS2, 2 transformatoren)", kavelB: 38, kavelL: 40, hek: true, woningAfstand: 50, folder: FOLDER_TVRS, velden: 0, gebouw: { b: 14.5, l: 20, h: 5, kelder: null, deuren: 2, trafos: 2 } },
+  { id: "tvrs3", naam: "Transportverdeelregelstation (TVRS3, 3 transformatoren)", kavelB: 38, kavelL: 49, hek: true, woningAfstand: 50, folder: FOLDER_TVRS, velden: 0, gebouw: { b: 14.5, l: 29, h: 5, kelder: null, deuren: 3, trafos: 3 } },
 ];
 
 // Gevelafwerking volgens de menukaart van Enexis: groen (RAL 6009) is standaard; de overige zijn varianten voor inpassing.

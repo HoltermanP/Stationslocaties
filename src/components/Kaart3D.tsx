@@ -154,7 +154,7 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
           </div>
           <div className="absolute bottom-14 left-2 max-w-sm rounded bg-white/95 p-2.5 text-xs leading-snug text-slate-700 shadow">
             <div className="text-sm font-medium text-slate-900">{k.naam} · 3D-beeld op schaal</div>
-            <div>Kavel {Math.round(Math.min(kavelL, areaKort(k)))} × {Math.round(kavelL)} m · gebouw {model.gebouw.b.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} × {model.gebouw.l.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} m, {model.gebouw.h.toLocaleString("nl-NL")} m hoog{STATION_TYPEN.find((t) => t.id === stationType)?.hek === false ? " · geen hekwerk (TVS)" : " · hekwerk 2 m"}</div>
+            <div>Kavel {Math.round(Math.min(kavelL, areaKort(k)))} × {Math.round(kavelL)} m · gebouw {model.gebouw.b.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} × {model.gebouw.l.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} m, {model.gebouw.h.toLocaleString("nl-NL")} m hoog{STATION_TYPEN.find((t) => t.id === stationType)?.gebouw.kelder ? `, kelder ${STATION_TYPEN.find((t) => t.id === stationType)!.gebouw.kelder!.toLocaleString("nl-NL")} m onder maaiveld` : ""}{STATION_TYPEN.find((t) => t.id === stationType)?.hek === false ? " · geen hekwerk (TVS)" : " · hekwerk 2 m"}</div>
             <div className="text-slate-500">Omliggende bebouwing: {bron || "laden…"}. Stationsmaten volgens de voorlichting van Enexis; gevel en beplanting zijn indicatief. De schaalfiguur bij de poort is 1,80 m.</div>
           </div>
         </>

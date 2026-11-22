@@ -4,9 +4,10 @@
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { GebouwSchets, PerceelSchets } from "@/components/Maatschets";
 import Plaat, { omvat, rondom, type Bbox } from "@/components/Plaat";
 import { api } from "@/lib/api";
-import { STATION_TYPEN, TRACE } from "@/lib/config";
+import { GEVELS, STATION_TYPEN, TRACE } from "@/lib/config";
 import { CONSTATERINGEN, FACTOREN, TECHNIEK, VRIJ, letterVan, sjabloonVan } from "@/lib/sjabloon";
 import type { Kandidaat, Lqs, Oordeel } from "@/lib/types";
 
@@ -55,7 +56,9 @@ export default function SjabloonRapport() {
   const a = l.analyse;
   const c = l.colofon ?? {};
   const type = STATION_TYPEN.find((t) => t.id === l.stationType) ?? STATION_TYPEN[0];
-  const tvs = type.id === "tvs";
+  const tvs = type.id === "tvs" || type.id === "tvs20"; // zelfde gebouw; de flyer-variant heeft een kleiner ruimtebeslag
+  const sjabloonBeeld = type.id === "tvs"; // de afbeeldingen uit de template horen bij de templatematen
+  const perceelOpp = Number.isInteger(l.kavelB * l.kavelL) ? getal(l.kavelB * l.kavelL) : opp(l.kavelB * l.kavelL);
   const kort = tvs ? "TVS" : type.naam.split(" (")[0].toLowerCase();
   const plaats = c.plaats || l.naam;
   const nummer = c.projectnummer || l.code;
@@ -169,18 +172,18 @@ export default function SjabloonRapport() {
           <div style={pp.kop}>Beschrijving te realiseren station</div>
           {tvs ? (
             <>
-              <p>Voor het plaatsen van de bouwwerken is {opp(l.kavelB * l.kavelL)}m² grondoppervlak gewenst. Binnen het TVS staat een technische installatie met 21 velden voor de aansluiting van het station en afgaande kabels voor het verzorgingsgebied. Voor dit MS/MS-station is geen transformator noodzakelijk. De middenspanning wordt niet getransformeerd naar een lager spanningsniveau.</p>
+              <p>Voor het plaatsen van de bouwwerken is {perceelOpp}m² grondoppervlak gewenst. Binnen het TVS staat een technische installatie met {type.velden} velden voor de aansluiting van het station en afgaande kabels voor het verzorgingsgebied. Voor dit MS/MS-station is geen transformator noodzakelijk. De middenspanning wordt niet getransformeerd naar een lager spanningsniveau.</p>
               <p>Er staan twee airconditioningsunits op het dak van het TVS. Aan de voorkant van het TVS is ruimte noodzakelijk voor de eerste meters van het kabeltracé. Kabels hebben ruimte nodig om te nivelleren van 1,8 naar 0,8 meter en om gebundeld tot één tracé. Bij volledige benutting is er een kabeltracé met een breedte van 7 meter dat het perceel verlaat wanneer alle kabels dezelfde windrichting uitgaan.</p>
             </>
           ) : <p>Voor het plaatsen van de bouwwerken is {opp(l.kavelB * l.kavelL)}m² grondoppervlak gewenst ({komma(l.kavelL)} × {komma(l.kavelB)} m). Aan de voorkant van het station is ruimte noodzakelijk voor de eerste meters van het kabeltracé.</p>}
           <div style={{ ...pp.kop, margin: "18px 0 8px" }}>Stationsgegevens</div>
           <div style={{ display: "flex", gap: 30, alignItems: "center" }}>
-            {tvs ? <img alt="" src="/sjabloon/gebouw.png" style={{ width: 120 }} /> : <span style={{ width: 120 }} />}
-            {maat([["Lengte (m)", komma(type.gebouw.l)], ["Breedte (m)", komma(type.gebouw.b)], ...(tvs ? [["Diepte (m)", "2,2"] as [string, string]] : []), ["Grondoppervlakte gebouw (m²)", opp(type.gebouw.l * type.gebouw.b)]], "Afmetingen gebouw")}
+            {sjabloonBeeld ? <img alt="" src="/sjabloon/gebouw.png" style={{ width: 120 }} /> : type.gebouw.trafos ? <span style={{ width: 120 }} /> : <GebouwSchets gebouw={type.gebouw} kleur={GEVELS[0].kleur} breedte={130} />}
+            {maat([["Lengte (m)", komma(type.gebouw.l)], ["Breedte (m)", komma(type.gebouw.b)], ...(sjabloonBeeld ? [] : [["Hoogte (m)", komma(type.gebouw.h)] as [string, string]]), ...(type.gebouw.kelder ? [["Diepte (m)", komma(type.gebouw.kelder)] as [string, string]] : []), ["Grondoppervlakte gebouw (m²)", opp(type.gebouw.l * type.gebouw.b)]], "Afmetingen gebouw")}
           </div>
           <div style={{ display: "flex", gap: 30, alignItems: "flex-start", marginTop: 14 }}>
-            {tvs ? <img alt="" src="/sjabloon/perceel.png" style={{ width: 120, mixBlendMode: "multiply" }} /> : <span style={{ width: 120 }} />}
-            {maat([["Lengte (m)", komma(l.kavelL)], ["Breedte (m)", komma(l.kavelB)], ["Grondoppervlakte (m²)", opp(l.kavelB * l.kavelL)]], "Afmetingen perceel")}
+            {sjabloonBeeld ? <img alt="" src="/sjabloon/perceel.png" style={{ width: 120, mixBlendMode: "multiply" }} /> : type.gebouw.trafos ? <span style={{ width: 120 }} /> : <PerceelSchets gebouw={type.gebouw} kavelB={l.kavelB} kavelL={l.kavelL} velden={type.velden} breedte={130} />}
+            {maat([["Lengte (m)", komma(l.kavelL)], ["Breedte (m)", komma(l.kavelB)], ["Grondoppervlakte (m²)", perceelOpp]], "Afmetingen perceel")}
           </div>
         </div>
         <div>

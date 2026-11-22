@@ -10,6 +10,7 @@ import { BRONNEN } from "@/lib/analyse/bronnen";
 import { api, eerstePolygoon, lijktWgs84 } from "@/lib/api";
 import { AUTO_CRITERIA, EIGENAAR_TYPEN, HAND_CRITERIA, RAPPORT_SECTIES, REVIEW_PUNTEN, STATION_TYPEN, STATUSSEN } from "@/lib/config";
 import { dagenTot, datum, ha, rangorde } from "@/lib/score";
+import { kavelWijktAf } from "@/lib/station3d";
 import type { EigenLaag, HandScore, Kandidaat, LaagSoort, LngLat, Lqs } from "@/lib/types";
 
 const Kaart = dynamic(() => import("@/components/Kaart"), { ssr: false });
@@ -53,7 +54,9 @@ export default function Werkplek() {
     wacht.current = {};
     if (!Object.keys(w).length) return;
     try {
-      await api(`/api/lqs/${id}`, "PATCH", w);
+      const nieuw = await api<Lqs>(`/api/lqs/${id}`, "PATCH", w);
+      // bij een andere kavelmaat past de server de kavels van de locaties aan; die overnemen, anders schrijft een latere wijziging ze terug
+      if (("kavelB" in w || "kavelL" in w) && !("kandidaten" in w) && !("kandidaten" in wacht.current)) setL((s) => (s ? { ...s, kandidaten: nieuw.kandidaten } : s));
       setOpslag("ok");
     } catch (e) {
       setFout(`Opslaan mislukt: ${(e as Error).message}`);
@@ -176,6 +179,13 @@ function Opdracht({ l, bewaar, tekenen, setTekenen, puntDoel, setPuntDoel, setFo
         <label className="block text-sm">Startdatum<input type="date" className="veld mt-1" value={l.startdatum} onChange={(e) => bewaar({ startdatum: e.target.value })} /></label>
         <label className="block text-sm">Deadline<input type="date" className="veld mt-1" value={l.deadline} onChange={(e) => bewaar({ deadline: e.target.value })} /></label>
       </div>
+      {l.kandidaten.some((k) => kavelWijktAf(k, l.kavelB, l.kavelL)) && (
+        <p className="rounded bg-amber-50 p-3 text-sm text-amber-900">
+          {l.kandidaten.filter((k) => kavelWijktAf(k, l.kavelB, l.kavelL)).length} locatie(s) hebben nog een kavel met een andere maat dan {l.kavelB} × {l.kavelL} m.{" "}
+          <button className="underline" onClick={() => bewaar({ kavelB: l.kavelB, kavelL: l.kavelL })}>Kavels verkleinen tot deze maat</button>{" "}
+          (aan de wegzijde, bij het kabeltracé). Is de nieuwe kavel groter dan de oude, voer dan de analyse opnieuw uit.
+        </p>
+      )}
       <p className="text-xs text-slate-500">Typen en maten volgens de voorlichting van Enexis (template LQS, menukaart en folders). Het zijn standaardmaten; pas de kavel per LQS aan op de opgave van Asset Management.{" "}
         {STATION_TYPEN.find((t) => t.id === l.stationType)?.folder && <a className="underline" target="_blank" rel="noreferrer" href={STATION_TYPEN.find((t) => t.id === l.stationType)!.folder}>Folder van Enexis over dit type (met foto&apos;s en tekeningen)</a>}</p>
 
