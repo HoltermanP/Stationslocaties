@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { naarRD } from "@/lib/analyse/rd";
 import { GEVELS, STATION_TYPEN } from "@/lib/config";
+import { realistischeLaag, type RealistischeLaag } from "@/lib/realistisch3d";
 import { stationModel } from "@/lib/station3d";
 import type { Beeld, Kandidaat } from "@/lib/types";
 
@@ -31,6 +32,10 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
   const [gereed, setGereed] = useState(false);
   const [beplanting, setBeplanting] = useState(k.beeld?.beplanting ?? true);
   const [gevel, setGevel] = useState(k.beeld?.gevel ?? "groen");
+  const [stijl, setStijl] = useState<"realistisch" | "schematisch">(k.beeld?.stijl ?? "realistisch");
+  const [omgeving, setOmgeving] = useState<{ features: never[] } | null>(null);
+  const echt = useRef<RealistischeLaag | null>(null);
+  const [echtKlaar, setEchtKlaar] = useState(0);
   const [vlucht, setVlucht] = useState(false);
   const [bron, setBron] = useState("");
   const [vast, setVast] = useState(false);
@@ -52,7 +57,7 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
       maxZoom: 22,
       interactive: !statisch,
       attributionControl: false,
-      canvasContextAttributes: { preserveDrawingBuffer: true },
+      canvasContextAttributes: { preserveDrawingBuffer: true, antialias: true },
       style: {
         version: 8,
         sky: { "sky-color": "#8fc1ee", "horizon-color": "#e8f1f8", "fog-color": "#e8f1f8", "sky-horizon-blend": 0.7, "horizon-fog-blend": 0.6, "fog-ground-blend": 0.85 },
@@ -84,6 +89,7 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
       .then((d: { bron: string; gebouwen: never }) => {
         if (weg) return;
         setBron(d.bron);
+        setOmgeving(d.gebouwen);
         const zet = () => (m.getSource("gebouwen") as maplibregl.GeoJSONSource | undefined)?.setData(d.gebouwen);
         if (m.loaded()) zet(); else m.once("load", zet);
       })
@@ -93,6 +99,8 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
       m.remove();
       kaart.current = null;
       setGereed(false);
+      setOmgeving(null);
+      echt.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [k.id]);
@@ -103,6 +111,33 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
     (m.getSource("station") as maplibregl.GeoJSONSource).setData(fc(model.blokken));
     (m.getSource("trace") as maplibregl.GeoJSONSource).setData(fc(k.trace ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: k.trace.lijn } }] : []));
   }, [gereed, model, k.trace]);
+
+  // realistische stijl: station en bebouwing in een eigen three.js-laag met textuur en schaduw; de schematische blokken gaan uit
+  useEffect(() => {
+    const m = kaart.current;
+    if (!gereed || !m || stijl !== "realistisch") return;
+    const blokLagen = ["gebouwen", "station-vast", "station-groen", "station-hek"];
+    let r: RealistischeLaag;
+    try {
+      r = realistischeLaag("realistisch", model.midden, voor - 30);
+      m.addLayer(r.laag);
+    } catch {
+      setStijl("schematisch"); // geen 3D-ondersteuning voor deze laag: terug naar de blokken
+      return;
+    }
+    echt.current = r;
+    blokLagen.forEach((id) => m.setLayoutProperty(id, "visibility", "none"));
+    setEchtKlaar((n) => n + 1);
+    return () => {
+      echt.current = null;
+      if (kaart.current !== m) return; // de kaart is al opgeruimd
+      if (m.getLayer("realistisch")) m.removeLayer("realistisch");
+      blokLagen.forEach((id) => m.setLayoutProperty(id, "visibility", "visible"));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gereed, stijl]);
+  useEffect(() => { echt.current?.zetStation(model.blokken as never); }, [echtKlaar, model]);
+  useEffect(() => { if (omgeving) echt.current?.zetGebouwen(omgeving.features); }, [echtKlaar, omgeving]);
 
   // rondvlucht: de camera draait om het station tot de gebruiker de kaart aanraakt
   useEffect(() => {
@@ -121,14 +156,23 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
     const m = kaart.current;
     if (!m) return;
     const a = document.createElement("a");
-    a.href = m.getCanvas().toDataURL("image/png");
+    const kaartDoek = m.getCanvas(), boven = echt.current?.doek();
+    let bron: HTMLCanvasElement = kaartDoek;
+    if (boven) { // realistische stijl: kaart en three-beeld samenvoegen
+      bron = document.createElement("canvas");
+      bron.width = kaartDoek.width; bron.height = kaartDoek.height;
+      const c = bron.getContext("2d")!;
+      c.drawImage(kaartDoek, 0, 0);
+      c.drawImage(boven, 0, 0);
+    }
+    a.href = bron.toDataURL("image/png");
     a.download = `3D-beeld ${k.naam}.png`;
     a.click();
   };
   const legVast = () => {
     const m = kaart.current;
     if (!m || !onBeeld) return;
-    onBeeld({ bearing: +m.getBearing().toFixed(1), pitch: +m.getPitch().toFixed(1), zoom: +m.getZoom().toFixed(2), beplanting, gevel });
+    onBeeld({ bearing: +m.getBearing().toFixed(1), pitch: +m.getPitch().toFixed(1), zoom: +m.getZoom().toFixed(2), beplanting, gevel, stijl });
     setVast(true);
     setTimeout(() => setVast(false), 2500);
   };
@@ -146,6 +190,7 @@ export default function Kaart3D({ kandidaat: k, stationType, statisch, onBeeld, 
             ))}
             <button className={knop} onClick={() => kijk(voor, 0)}>Bovenaanzicht</button>
             <button className={vlucht ? aan : knop} onClick={() => setVlucht(!vlucht)}>Rondvlucht</button>
+            <button className={stijl === "realistisch" ? aan : knop} title="Realistisch: materialen met textuur, zonlicht en schaduw. Schematisch: egale blokken." onClick={() => setStijl(stijl === "realistisch" ? "schematisch" : "realistisch")}>Realistisch</button>
             <button className={beplanting ? aan : knop} onClick={() => setBeplanting(!beplanting)}>Beplanting</button>
             <button className={knop} title="Gevelafwerking volgens de menukaart van Enexis" onClick={() => setGevel(GEVELS[(GEVELS.findIndex((g) => g.id === gevel) + 1) % GEVELS.length].id)}>Gevel: {GEVELS.find((g) => g.id === gevel)?.naam ?? gevel}</button>
             <button className={knop} onClick={opslaan}>Afbeelding opslaan</button>

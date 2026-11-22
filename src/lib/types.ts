@@ -88,7 +88,7 @@ export type Oordeel = "groen" | "oranje" | "rood";
 export type SjabloonInvulling = { velden: Record<string, string>; oordelen: Record<string, Oordeel> };
 export type Colofon = { plaats?: string; projectnummer?: string; versie?: string; specialist?: string; email?: string };
 
-export type Beeld = { bearing: number; pitch: number; zoom: number; beplanting: boolean; gevel?: string };
+export type Beeld = { bearing: number; pitch: number; zoom: number; beplanting: boolean; gevel?: string; stijl?: "realistisch" | "schematisch" };
 
 export type Kandidaat = {
   id: string;

@@ -27,10 +27,10 @@ export default function Portfolio() {
     api<Rij[]>("/api/lqs").then(setRijen).catch((e) => setFout(e.message));
   }, []);
 
-  const demo = async () => {
+  const demo = async (scenario: string) => {
     setBezig(true);
     try {
-      const l = await api<{ id: string }>("/api/demo", "POST");
+      const l = await api<{ id: string }>("/api/demo", "POST", { scenario });
       router.push(`/lqs/${l.id}`);
     } catch (e) {
       setFout((e as Error).message);
@@ -66,7 +66,13 @@ export default function Portfolio() {
         </div>
         <div className="flex gap-2">
           <button className="knop licht" onClick={() => (link.open ? setLink({ ...link, open: false }) : linkActie("GET"))}>Meekijklink opdrachtgever</button>
-          <button className="knop licht" onClick={demo} disabled={bezig}>{bezig ? "Bezig…" : "Demo-LQS aanmaken"}</button>
+          <select className="knop licht" disabled={bezig} value="" title="Maakt een volledig doorgerekende voorbeeld-LQS aan" onChange={(e) => { if (e.target.value) demo(e.target.value); }}>
+            <option value="">{bezig ? "Bezig…" : "Demo-LQS aanmaken…"}</option>
+            <option value="zwolle">Zwolle Marslanden – TVS (template)</option>
+            <option value="groningen">Groningen Eemspoort – TVS 20 velden</option>
+            <option value="eindhoven">Eindhoven De Hurk – TVS 23 velden</option>
+            <option value="venlo">Venlo Trade Port – TVRS2</option>
+          </select>
           <Link href="/lqs/nieuw" className="knop groen">Nieuwe LQS</Link>
         </div>
       </div>

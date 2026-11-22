@@ -2,7 +2,7 @@ import { naarRD, naarWGS } from "./analyse/rd";
 import { GEVELS, STATION_TYPEN } from "./config";
 import type { Kandidaat, LngLat } from "./types";
 
-type Blok = { type: "Feature"; properties: { b: number; h: number; kleur: string; laag: "vast" | "hek" | "groen" }; geometry: { type: "Polygon"; coordinates: number[][][] } };
+type Blok = { type: "Feature"; properties: { b: number; h: number; kleur: string; laag: "vast" | "hek" | "groen"; /** onderdeel (sleutel uit KLEUR, anders "gevel"), voor de materiaalkeuze in de realistische weergave */ soort: string }; geometry: { type: "Polygon"; coordinates: number[][][] } };
 
 const KLEUR = {
   terrein: "#a9a59c", pad: "#8b8881", inrit: "#6e6e6c", plint: "#4a4e52", gevel: "#8a5f4a", dak: "#2e3236", deur: "#1f4a3a", rooster: "#c6c9cd",
@@ -89,7 +89,8 @@ export function stationModel(k: Kandidaat, typeId: string, beplanting: boolean, 
   const blokken: Blok[] = [];
   const vlak = (punten: number[][], b: number, h: number, kleur: string, laag: Blok["properties"]["laag"] = "vast") => {
     const ring = punten.map(([u, v]) => naarWGS(rd(u, v)));
-    blokken.push({ type: "Feature", properties: { b, h, kleur, laag }, geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] } });
+    const soort = laag === "hek" && kleur === KLEUR.hek ? "hek" : (Object.entries(KLEUR).find(([naam, waarde]) => waarde === kleur && naam !== "gevel")?.[0] ?? "gevel");
+    blokken.push({ type: "Feature", properties: { b, h, kleur, laag, soort }, geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] } });
   };
   const blok = (u0: number, v0: number, u1: number, v1: number, b: number, h: number, kleur: string, laag: Blok["properties"]["laag"] = "vast") =>
     vlak([[u0, v0], [u1, v0], [u1, v1], [u0, v1]], b, h, kleur, laag);
