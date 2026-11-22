@@ -52,7 +52,8 @@ export type Feiten = {
 export type KlicInfo = {
   meldnummer?: string;
   ingelezenOp?: string;
-  bron?: "upload" | "kadaster";
+  /** simulatie = verzonnen leidingen voor een demo, geen levering van het Kadaster */
+  bron?: "upload" | "kadaster" | "simulatie";
   /** geleverd = false: deze netbeheerder heeft (nog) geen gegevens aangeleverd, de levering is dus onvolledig */
   netbeheerders?: { code: string; naam: string; geleverd: boolean | null }[];
   themas?: { thema: string; naam: string; leidingen: number }[];

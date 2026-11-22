@@ -1,5 +1,7 @@
 import { voerAnalyseUit } from "@/lib/analyse/analyse";
 import { verzamelFeiten } from "@/lib/analyse/feiten";
+import { bestemmingTekst, voorbeeldEigendom, voorbeeldHandmatig, voorbeeldVoorstel } from "@/lib/demoInvulling";
+import { simuleerKlic } from "@/lib/klic/simuleer";
 import { haal, maak, wijzig } from "@/lib/repo";
 import { rangorde } from "@/lib/score";
 import { sjabloonVan } from "@/lib/sjabloon";
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
   const sc = SCENARIOS.find((x) => x.id === scenario) ?? SCENARIOS[0];
   if (scenario && sc.id !== scenario) return Response.json({ fout: `Onbekend scenario; kies uit ${SCENARIOS.map((x) => x.id).join(", ")}` }, { status: 400 });
   const plaats = SCENARIOS.find((x) => x.naam === bestaand?.naam)?.plaats ?? (bestaand ? bestaand.naam.replace(/^Demo – /, "") : sc.plaats);
-  const l = bestaand ?? await maak({
+  let l = bestaand ?? await maak({
     naam: sc.naam,
     gemeente: sc.gemeente,
     stationType: sc.stationType,
@@ -56,21 +58,37 @@ export async function POST(req: Request) {
     aangedragen: [{ naam: "Aangedragen door gemeente", punt: sc.aangedragen as [number, number] }],
   });
   try {
+    // gesimuleerde KLIC-leidingen langs de wegen, tenzij er al een echte levering is ingelezen
+    if (!l.klic?.ingelezenOp || l.klic.bron === "simulatie") {
+      const sim = await simuleerKlic(l).catch((e) => { console.error("Demo: KLIC-simulatie mislukt", e); return null; });
+      if (sim) l = (await wijzig(l.id, sim)) ?? l;
+    }
     const { analyse, kandidaten: ruw } = await voerAnalyseUit(l);
     const kandidaten = await Promise.all(ruw.map(async (k) => ({ ...k, feiten: await verzamelFeiten(k) })));
+    // wat de planoloog en het AI-voorstel zouden invullen: eigendom, voorstel per criterium en de handmatige scores
+    kandidaten.forEach((k, i) => {
+      k.sjabloon = voorbeeld(k, i);
+      k.eigendom = voorbeeldEigendom(k, l.gemeente);
+      k.voorstel = voorbeeldVoorstel(k);
+      k.handmatig = voorbeeldHandmatig(k.voorstel, k.sjabloon.velden.inpassing);
+    });
     const rang = rangorde(kandidaten, l.gewichten);
     // voorkeur: hoogste score onder de locaties waar de bestemming een nutsvoorziening waarschijnlijk toelaat
     const geschikt = rang.filter((r) => r.geschikt);
     const voorkeurId = (geschikt.find((r) => past(r.k)) ?? geschikt[0])?.k.id ?? null;
-    kandidaten.forEach((k, i) => {
-      k.sjabloon = voorbeeld(k, i);
-      k.sjabloon.velden.notities = `${sjabloonVan({ ...l, analyse, kandidaten, voorkeurId }, k).veld("notities")} Demo: eigendom, planregels, stikstof, overstromingsrisico, bermbreedte en inpassing zijn fictief ingevuld.`;
+    const gekozen = geschikt.find((r) => r.k.id === voorkeurId);
+    const tweede = geschikt.find((r) => r.k.id !== voorkeurId);
+    const voorkeurMotivatie = gekozen
+      ? `${gekozen.k.naam} scoort ${gekozen.score} van 100${tweede ? `, tegen ${tweede.score} voor ${tweede.k.naam}` : ""}. ${gekozen.k.voorstel?.bestemming.motivatie ?? ""} ${gekozen.k.voorstel?.klic.motivatie ?? ""}`.replace(/\s+/g, " ").trim()
+      : "Er is geen locatie gevonden die buiten de uitgesloten gebieden valt.";
+    kandidaten.forEach((k) => {
+      k.sjabloon!.velden.notities = `${sjabloonVan({ ...l, analyse, kandidaten, voorkeurId }, k).veld("notities")} Demo: eigendom, planregels, stikstof, overstromingsrisico, bermbreedte, inpassing, de handmatige scores en het AI-voorstel zijn fictief ingevuld; de KLIC-leidingen zijn gesimuleerd.`;
     });
-    const basis = { ...l, analyse, kandidaten, voorkeurId, voorkeurMotivatie: "Van de locaties met een passende bestemming scoort deze het hoogst." };
+    const basis = { ...l, analyse, kandidaten, voorkeurId, voorkeurMotivatie };
     const teksten = maakTeksten(basis);
-    teksten.aanleiding += " Dit is een demo: het zoekgebied is fictief en de handmatige velden bevatten voorbeeldwaarden.";
+    teksten.aanleiding += " Dit is een demo: het zoekgebied is fictief, de velden van de planoloog en het AI-voorstel bevatten voorbeeldwaarden en de KLIC-gegevens zijn gesimuleerd.";
     return Response.json(await wijzig(l.id, {
-      analyse, kandidaten, voorkeurId, voorkeurMotivatie: basis.voorkeurMotivatie, teksten, status: "Rapport",
+      analyse, kandidaten, voorkeurId, voorkeurMotivatie, teksten, status: "Rapport",
       colofon: { plaats, projectnummer: "ID000000 (demo)", versie: "V0.1", specialist: "Planoloog Enexis", email: "voor.achternaam@enexis.nl" },
     }));
   } catch (e) {
@@ -80,19 +98,17 @@ export async function POST(req: Request) {
   }
 }
 
-const bestemming = (k: Kandidaat) => (k.feiten?.bestemmingen ?? []).map((b) => `${b.hoofdgroep} ${b.naam}`).join(" ").toLowerCase();
-const past = (k: Kandidaat) => /bedrijf|verkeer|maatschappelijk/.test(bestemming(k)) && !/natuur/.test(bestemming(k));
+const bestemming = bestemmingTekst;
+const past = (k: Kandidaat) => /bedrijf|bedrijven|industrie|verkeer|maatschappelijk/.test(bestemming(k)) && !/natuur/.test(bestemming(k));
 
 /** Fictieve voorbeeldwaarden voor de velden die een planoloog zelf invult. */
 function voorbeeld(k: Kandidaat, i: number): NonNullable<Kandidaat["sjabloon"]> {
   const groep = bestemming(k);
   const groen = /groen|agrarisch|natuur|recreatie/.test(groep);
-  const eigenaar = ["Gemeente", "Gemeente", "Bedrijf", "Waterschap", "Particulier", "Gemeente"][i % 6];
   const ruim = i % 3 !== 1;
   const velden: Record<string, string> = {
     gebruik: past(k) ? "Passend binnen het omgevingsplan" : "Niet passend, afwijken nodig (BOPA)",
     bouwen: past(k) ? "Passend onder voorwaarden" : "Niet passend, afwijken nodig (BOPA)",
-    grondeigendom: eigenaar,
     stikstof2: "AERIUS-berekening aanlegfase nodig",
     overstroming: "Kleine kans",
     provincie: "Niet van toepassing",

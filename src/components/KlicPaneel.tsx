@@ -47,8 +47,9 @@ export default function KlicPaneel({ l, setL, verstuur }: { l: Lqs; setL: (l: Lq
       <div className="font-medium">KLIC – kabels en leidingen van derden</div>
       {k.ingelezenOp ? (
         <div className="mt-1 text-xs text-slate-700">
-          Levering {k.meldnummer} ingelezen op {new Date(k.ingelezenOp).toLocaleString("nl-NL")} ({k.bron === "kadaster" ? "via Kadaster-koppeling" : "zip-bestand"}):{" "}
+          Levering {k.meldnummer} ingelezen op {new Date(k.ingelezenOp).toLocaleString("nl-NL")} ({k.bron === "kadaster" ? "via Kadaster-koppeling" : k.bron === "simulatie" ? "gesimuleerd" : "zip-bestand"}):{" "}
           {(k.themas ?? []).map((t) => `${t.naam.toLowerCase()} (${t.leidingen})`).join(", ") || "geen leidingen in het zoekgebied"}.
+          {k.bron === "simulatie" && <div className="mt-1 rounded bg-amber-50 px-2 py-1 text-amber-900">Gesimuleerde KLIC-gegevens voor de demo: de leidingen volgen de wegen op een vaste afstand en zijn verzonnen. Vervang ze door een echte levering voordat de locatie wordt beoordeeld.</div>}
           {nietGeleverd.length > 0 && <div className="mt-1 rounded bg-amber-50 px-2 py-1 text-amber-900">Onvolledig: {nietGeleverd.map((n) => n.naam).join(", ")} heeft geen gegevens aangeleverd.</div>}
           <div className="mt-1 text-slate-500">De leidingen staan per thema als kaartlaag hierboven. Voer de analyse opnieuw uit om ze mee te wegen.</div>
         </div>
