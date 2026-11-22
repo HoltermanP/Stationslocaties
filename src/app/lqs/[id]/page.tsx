@@ -15,6 +15,7 @@ import type { EigenLaag, HandScore, Kandidaat, LaagSoort, LngLat, Lqs } from "@/
 
 const Kaart = dynamic(() => import("@/components/Kaart"), { ssr: false });
 const Kaart3D = dynamic(() => import("@/components/Kaart3D"), { ssr: false });
+const StreetSmart = dynamic(() => import("@/components/StreetSmart"), { ssr: false });
 const euro = (n: number) => `€ ${n.toLocaleString("nl-NL")}`;
 const TABS = ["Opdracht", "Analyse", "Locaties", "Rapport", "Review"] as const;
 type Tab = (typeof TABS)[number];
@@ -40,6 +41,7 @@ export default function Werkplek() {
   const [puntDoel, setPuntDoel] = useState<null | "aansluitpunt" | "aangedragen">(null);
   const [focus, setFocus] = useState<LngLat | null>(null);
   const [beeld3d, setBeeld3d] = useState<string | null>(null);
+  const [straat, setStraat] = useState<string | null>(null);
   const wacht = useRef<Partial<Lqs>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,11 +101,15 @@ export default function Werkplek() {
   };
   const d = dagenTot(l.deadline);
   const in3d = l.kandidaten.find((k) => k.id === beeld3d);
+  const inStraat = l.kandidaten.find((k) => k.id === straat);
 
   return (
     <main className="grid grid-cols-1 grid-rows-[45vh_minmax(0,1fr)] overflow-hidden lg:grid-cols-[1fr_560px] lg:grid-rows-[minmax(0,1fr)]" style={{ height: "calc(100vh - 3rem)" }}>
       <div className="min-h-0">
-        {in3d ? (
+        {inStraat ? (
+          <StreetSmart key={inStraat.id} kandidaat={inStraat} onSluit={() => setStraat(null)}
+            onBeeld={(foto) => bewaar({ beelden: { ...l.beelden, [`${inStraat.id}:streetview`]: foto } })} />
+        ) : in3d ? (
           <Kaart3D key={in3d.id} kandidaat={in3d} stationType={l.stationType} onSluit={() => setBeeld3d(null)}
             onBeeld={(beeld) => bewaar({ kandidaten: l.kandidaten.map((x) => (x.id === in3d.id ? { ...x, beeld } : x)) })} />
         ) : (
@@ -141,7 +147,7 @@ export default function Werkplek() {
           {fout && <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-800">{fout}</p>}
           {tab === "Opdracht" && <Opdracht l={l} bewaar={bewaar} tekenen={tekenen} setTekenen={setTekenen} puntDoel={puntDoel} setPuntDoel={setPuntDoel} setFout={setFout} />}
           {tab === "Analyse" && <><AnalyseTab l={l} bewaar={bewaar} analyseer={analyseer} bezig={analyseBezig} setFout={setFout} /><div className="mt-4"><KlicPaneel l={l} setL={setL} verstuur={verstuur} /></div></>}
-          {tab === "Locaties" && <Locaties l={l} bewaar={bewaar} setL={setL} verstuur={verstuur} setFocus={(p) => { setBeeld3d(null); setFocus(p); }} setBeeld3d={setBeeld3d} analyseer={analyseer} bezig={analyseBezig} />}
+          {tab === "Locaties" && <Locaties l={l} bewaar={bewaar} setL={setL} verstuur={verstuur} setFocus={(p) => { setBeeld3d(null); setStraat(null); setFocus(p); }} setBeeld3d={(id) => { setStraat(null); setBeeld3d(id); }} setStraat={(id) => { setBeeld3d(null); setStraat(id); }} analyseer={analyseer} bezig={analyseBezig} />}
           {tab === "Rapport" && <Rapport l={l} bewaar={bewaar} setL={setL} verstuur={verstuur} />}
           {tab === "Review" && <Review l={l} bewaar={bewaar} />}
         </div>
@@ -304,7 +310,7 @@ function AnalyseTab({ l, bewaar, analyseer, bezig, setFout }: { l: Lqs; bewaar: 
   );
 }
 
-function Locaties({ l, bewaar, setL, verstuur, setFocus, setBeeld3d, analyseer, bezig }: { l: Lqs; bewaar: Bewaar; setL: (l: Lqs) => void; verstuur: () => Promise<void>; setFocus: (p: LngLat) => void; setBeeld3d: (id: string) => void; analyseer: () => void; bezig: boolean }) {
+function Locaties({ l, bewaar, setL, verstuur, setFocus, setBeeld3d, setStraat, analyseer, bezig }: { setStraat: (id: string) => void; l: Lqs; bewaar: Bewaar; setL: (l: Lqs) => void; verstuur: () => Promise<void>; setFocus: (p: LngLat) => void; setBeeld3d: (id: string) => void; analyseer: () => void; bezig: boolean }) {
   const [aiBezig, setAiBezig] = useState(false);
   const [melding, setMelding] = useState("");
   if (!l.analyse) return <div className="text-sm text-slate-600">Voer eerst de analyse uit.<div><button className="knop groen mt-3" disabled={bezig || !l.zoekgebied} onClick={analyseer}>{bezig ? "Analyse loopt…" : "Analyse uitvoeren"}</button></div></div>;
@@ -438,6 +444,7 @@ function Locaties({ l, bewaar, setL, verstuur, setFocus, setBeeld3d, analyseer, 
               <button className="underline" onClick={() => setFocus([...k.punt] as LngLat)}>Toon op kaart</button>
               <button className="font-medium text-emerald-800 underline" onClick={() => setBeeld3d(k.id)}>3D-beeld</button>
               <a className="underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${k.punt[1]},${k.punt[0]}`}>Streetview</a>
+              <button className="underline" title="Panoramabeeld van Cyclomedia; vereist een account en API-sleutel" onClick={() => setStraat(k.id)}>Street Smart</button>
               <a className="underline" target="_blank" rel="noreferrer" href="https://omgevingswet.overheid.nl/regels-op-de-kaart">Omgevingsloket</a>
               {k.voorstel && HAND_CRITERIA.some((c) => k.voorstel![c.id]?.score && !k.handmatig[c.id]?.score) && (
                 <button className="underline" onClick={() => neemOver(k, HAND_CRITERIA.filter((c) => !k.handmatig[c.id]?.score).map((c) => c.id))}>Open voorstellen overnemen</button>
