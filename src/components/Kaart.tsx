@@ -2,8 +2,8 @@
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
-import { naarRD } from "@/lib/analyse/rd";
-import type { AangedragenLocatie, Analyse, Kandidaat, LngLat, Polygoon } from "@/lib/types";
+import { naarRD, naarWGS } from "@/lib/analyse/rd";
+import type { AangedragenLocatie, Analyse, EigenLaag, Kandidaat, LngLat, Polygoon } from "@/lib/types";
 
 export type KaartModus = "kijk" | "teken" | "punt";
 
@@ -13,6 +13,8 @@ type Props = {
   kandidaten?: Kandidaat[];
   aangedragen?: AangedragenLocatie[];
   aansluitpunt?: LngLat | null;
+  /** KLIC-lagen (kabels en leidingen van derden); apart aan en uit te zetten */
+  klic?: EigenLaag[];
   voorkeurId?: string | null;
   modus?: KaartModus;
   puntHint?: string;
@@ -37,6 +39,38 @@ const ONDERGRONDEN = [
 // MapLibre 6 laadt zijn worker als los bestand; `npm run kaartworker` zet het in /public/maplibre.
 if (typeof window !== "undefined") maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
+// Kleur per thema, zoals bij kabels en leidingen gebruikelijk: elektra rood/blauw, gas geel, water blauw, riool bruin, data groen
+const KLIC_KLEUR: Record<string, string> = {
+  laagspanning: "#2563eb", middenspanning: "#dc2626", hoogspanning: "#7f1d1d", landelijkHoogspanningsnet: "#7f1d1d",
+  gasLageDruk: "#eab308", gasHogeDruk: "#ea580c", buisleidingGevaarlijkeInhoud: "#c026d3", petrochemie: "#c026d3",
+  water: "#0891b2", rioolVrijverval: "#92400e", rioolOnderOverOfOnderdruk: "#92400e", warmte: "#db2777", datatransport: "#16a34a", wees: "#64748b", overig: "#64748b",
+};
+const KLIC_NAAM: Record<string, string> = {
+  laagspanning: "Laagspanning", middenspanning: "Middenspanning", hoogspanning: "Hoogspanning", landelijkHoogspanningsnet: "Landelijk hoogspanningsnet",
+  gasLageDruk: "Gas lage druk", gasHogeDruk: "Gas hoge druk", buisleidingGevaarlijkeInhoud: "Buisleiding gevaarlijke inhoud", petrochemie: "(Petro)chemie",
+  water: "Water", rioolVrijverval: "Riool", rioolOnderOverOfOnderdruk: "Riool onder druk", warmte: "Warmte", datatransport: "Datatransport", wees: "Weesleiding", overig: "Overig",
+};
+
+/** Alle lijnen uit de KLIC-lagen als GeoJSON-features in WGS84 (de lagen zelf staan in RD of WGS84, net als bij de analyse). */
+function klicFeatures(lagen: EigenLaag[]) {
+  const uit: unknown[] = [];
+  const punt = (c: number[]) => (Math.abs(c[0]) > 180 || Math.abs(c[1]) > 180 ? naarWGS(c) : [c[0], c[1]]);
+  const conv = (c: unknown): unknown => (typeof (c as number[])[0] === "number" ? punt(c as number[]) : (c as unknown[]).map(conv));
+  for (const laag of lagen) {
+    const thema = laag.id.replace(/^klic-/, "");
+    const loop = (o: unknown) => {
+      const x = o as { type?: string; features?: unknown[]; geometry?: unknown; properties?: Record<string, unknown>; coordinates?: unknown };
+      if (x?.type === "FeatureCollection") x.features?.forEach(loop);
+      else if (x?.type === "Feature") {
+        const g = x.geometry as { type?: string; coordinates?: unknown } | undefined;
+        if (g?.coordinates) uit.push({ type: "Feature", properties: { thema, ...x.properties }, geometry: { type: g.type, coordinates: conv(g.coordinates) } });
+      } else if (x?.coordinates) uit.push({ type: "Feature", properties: { thema }, geometry: { type: x.type, coordinates: conv(x.coordinates) } });
+    };
+    loop(laag.geojson);
+  }
+  return uit;
+}
+
 const fc = (features: unknown[]) => ({ type: "FeatureCollection", features }) as never;
 
 // 3D-weergave: bebouwing (BAG + hoogte uit 3DBAG) via /api/omgeving, per blok van 800 × 800 m in RD, pas vanaf deze zoom
@@ -57,7 +91,8 @@ export default function Kaart(p: Props) {
   const [drie, setDrie] = useState(false);
   const [drieStatus, setDrieStatus] = useState("");
   const blokken = useRef(new Map<string, Gebouw[]>());
-  const [aan, setAan] = useState<Record<string, boolean>>(p.start ?? { analyse: true });
+  const [aan, setAan] = useState<Record<string, boolean>>(p.start ?? { analyse: true, klic: true });
+  const [klikInfo, setKlikInfo] = useState<Record<string, unknown> | null>(null);
 
   const tekenSchets = () => {
     const s = schets.current;
@@ -98,6 +133,7 @@ export default function Kaart(p: Props) {
           kavels: { type: "geojson", data: fc([]) },
           traces: { type: "geojson", data: fc([]) },
           schets: { type: "geojson", data: fc([]) },
+          klic: { type: "geojson", data: fc([]) },
         },
         layers: [
           { id: "brt", type: "raster", source: "brt" },
@@ -108,6 +144,8 @@ export default function Kaart(p: Props) {
           { id: "gebied", type: "line", source: "gebied", paint: { "line-color": "#0f172a", "line-width": 2.5, "line-dasharray": [3, 2] } },
           { id: "traces-rand", type: "line", source: "traces", paint: { "line-color": "#ffffff", "line-width": ["case", ["get", "voorkeur"], 6, 4], "line-opacity": 0.8 } },
           { id: "traces", type: "line", source: "traces", paint: { "line-color": ["case", ["get", "voorkeur"], "#d97706", "#f59e0b"], "line-width": ["case", ["get", "voorkeur"], 3.5, 2], "line-dasharray": [2, 1.5] } },
+          { id: "klic-rand", type: "line", source: "klic", layout: { visibility: "none", "line-cap": "round" }, paint: { "line-color": "#ffffff", "line-width": ["case", ["==", ["get", "aard"], "aansluiting"], 3, 5], "line-opacity": 0.7 } },
+          { id: "klic", type: "line", source: "klic", layout: { visibility: "none", "line-cap": "round" }, paint: { "line-color": ["match", ["get", "thema"], ...Object.entries(KLIC_KLEUR).flat(), "#64748b"] as never, "line-width": ["case", ["==", ["get", "aard"], "aansluiting"], 1.2, 2.4] } },
           { id: "kavels-vlak", type: "fill", source: "kavels", paint: { "fill-color": ["case", ["get", "voorkeur"], "#059669", "#0f172a"], "fill-opacity": 0.35 } },
           { id: "kavels-lijn", type: "line", source: "kavels", paint: { "line-color": ["case", ["get", "voorkeur"], "#047857", "#0f172a"], "line-width": 2 } },
           { id: "schets-lijn", type: "line", source: "schets", paint: { "line-color": "#dc2626", "line-width": 2 } },
@@ -129,6 +167,13 @@ export default function Kaart(p: Props) {
         tekenSchets();
       } else if (a.modus === "punt") a.onPunt?.(punt);
     });
+    m.on("click", "klic", (e) => {
+      if (actueel.current.modus && actueel.current.modus !== "kijk") return;
+      const f = e.features?.[0];
+      if (f) setKlikInfo(f.properties as Record<string, unknown>);
+    });
+    m.on("mouseenter", "klic", () => { if (!actueel.current.modus || actueel.current.modus === "kijk") m.getCanvas().style.cursor = "pointer"; });
+    m.on("mouseleave", "klic", () => { m.getCanvas().style.cursor = ""; });
     kaart.current = m;
     return () => {
       m.remove();
@@ -163,6 +208,25 @@ export default function Kaart(p: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gereed, p.analyse?.uitgevoerdOp]);
+
+  // KLIC-leidingen als aparte laag
+  const klicSleutel = (p.klic ?? []).map((k) => `${k.id}:${JSON.stringify(k.geojson).length}`).join("|");
+  const klicLagen = (p.klic ?? []).filter((k) => k.functie === "leidingen");
+  useEffect(() => {
+    const m = kaart.current;
+    if (!gereed || !m) return;
+    (m.getSource("klic") as maplibregl.GeoJSONSource).setData(fc(klicFeatures(klicLagen)));
+    setKlikInfo(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gereed, klicSleutel]);
+  useEffect(() => {
+    const m = kaart.current;
+    if (!gereed || !m) return;
+    const zicht = aan.klic && klicLagen.length ? "visible" : "none";
+    for (const id of ["klic", "klic-rand"]) m.setLayoutProperty(id, "visibility", zicht);
+    if (!aan.klic) setKlikInfo(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gereed, aan.klic, klicSleutel]);
 
   // ondergronden
   useEffect(() => {
@@ -284,10 +348,33 @@ export default function Kaart(p: Props) {
               {o.naam}
             </button>
           ))}
+          {klicLagen.length > 0 && (
+            <button onClick={() => setAan((s) => ({ ...s, klic: !s.klic }))} title="Kabels en leidingen van derden (KLIC) aan of uit"
+              className={`rounded border px-2 py-1 text-xs shadow-sm ${aan.klic ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+              KLIC
+            </button>
+          )}
           <button onClick={() => setDrie((d) => !d)} title="Kaart kantelen en de bebouwing in 3D tonen (BAG met hoogte uit 3DBAG)"
             className={`rounded border px-2 py-1 text-xs shadow-sm ${drie ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
             3D
           </button>
+        </div>
+      )}
+      {!p.statisch && aan.klic && klicLagen.length > 0 && (
+        <div className="absolute bottom-10 right-2 max-w-[15rem] rounded bg-white/95 px-2 py-1.5 text-xs text-slate-700 shadow">
+          <div className="mb-1 font-medium">KLIC{klicLagen.some((k) => k.naam.includes("gesimuleerd")) ? " (gesimuleerd)" : ""}</div>
+          {klicLagen.map((k) => {
+            const t = k.id.replace(/^klic-/, "");
+            return <div key={k.id} className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-4" style={{ background: KLIC_KLEUR[t] ?? "#64748b", height: 3 }} />{KLIC_NAAM[t] ?? t}</div>;
+          })}
+          {klikInfo && (
+            <div className="mt-1.5 border-t pt-1.5">
+              <div className="flex justify-between gap-2 font-medium"><span>{KLIC_NAAM[String(klikInfo.thema)] ?? String(klikInfo.thema)}{klikInfo.aard ? ` – ${klikInfo.aard}` : ""}</span><button onClick={() => setKlikInfo(null)} className="text-slate-400">×</button></div>
+              {([["beheerder", "Beheerder"], ["kenmerk", "Type"], ["materiaal", "Materiaal"], ["diepteM", "Diepte"], ["aanlegjaar", "Aangelegd"]] as const).filter(([k]) => klikInfo[k] != null && klikInfo[k] !== "").map(([k, naam]) => (
+                <div key={k}><span className="text-slate-500">{naam}:</span> {String(klikInfo[k])}{k === "diepteM" ? " m" : ""}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {drie && drieStatus && <div className="absolute bottom-10 left-2 rounded bg-white/95 px-2 py-1 text-xs text-slate-700 shadow">{drieStatus}</div>}

@@ -113,7 +113,7 @@ export default function Werkplek() {
           <Kaart3D key={in3d.id} kandidaat={in3d} stationType={l.stationType} onSluit={() => setBeeld3d(null)}
             onBeeld={(beeld) => bewaar({ kandidaten: l.kandidaten.map((x) => (x.id === in3d.id ? { ...x, beeld } : x)) })} />
         ) : (
-        <Kaart zoekgebied={l.zoekgebied} analyse={l.analyse} kandidaten={l.kandidaten} aangedragen={l.aangedragen} aansluitpunt={l.aansluitpunt}
+        <Kaart zoekgebied={l.zoekgebied} analyse={l.analyse} kandidaten={l.kandidaten} aangedragen={l.aangedragen} aansluitpunt={l.aansluitpunt} klic={l.eigenLagen.filter((e) => e.functie === "leidingen")}
           voorkeurId={l.voorkeurId} modus={modus} focus={focus}
           puntHint={puntDoel === "aansluitpunt" ? "Klik het aansluitpunt op het net aan" : "Klik de aangedragen locatie aan"}
           onPolygoon={(p) => { bewaar({ zoekgebied: p }); setTekenen(false); }} onPunt={opPunt}
