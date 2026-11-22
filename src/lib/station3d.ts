@@ -23,7 +23,9 @@ export function kavelKader(k: Kandidaat) {
   const binnen = ([x, y]: number[]) => p.every((a, i) => { const b = p[(i + 1) % 4]; return ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])) * ((b[0] - a[0]) * (midden[1] - a[1]) - (b[1] - a[1]) * (midden[0] - a[0])) >= 0; });
   const buiten = (k.trace?.lijn ?? []).map(naarRD).find((q) => !binnen(q));
   let e = 0;
-  if (buiten) {
+  // de analyse legt de voorzijde (eerste rand) aan de wegzijde; alleen zonder weg beslist het kabeltracé
+  const naarWeg = /weg|bebouwing|voorzijde/.test(k.ligging ?? "") && !/niet gedraaid/.test(k.ligging ?? "");
+  if (buiten && !naarWeg) {
     // de rand waarvan de buitenwaartse richting het best naar het tracé wijst, genormaliseerd op de kavelmaat
     let beste = -Infinity;
     for (let i = 0; i < 4; i++) {

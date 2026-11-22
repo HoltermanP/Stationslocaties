@@ -263,6 +263,7 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   // --- kavel richten: lange zijde evenwijdig aan de dichtstbijzijnde rijweg (programma van eisen Enexis), voorzijde naar de weg.
   // Zonder weg binnen 150 m volgt de kavel de richting van het dichtstbijzijnde gebouw; anders ligt hij noord-zuid. ---
   type Vec = [number, number];
+  const WEGAFSTAND = 6; // m van de hartlijn van de weg tot de voorzijde van de kavel
   const wegen = await rijwegen(bbox).catch(() => [] as number[][][]);
   const gevels = (await panden(bbox).catch(() => [])).flatMap((f) => {
     const g = f.geometry;
@@ -313,11 +314,32 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
       { t, n, langs: B, diep: L, tekst: `korte zijde ${naar.replace("evenwijdig aan", "aan")}` },
     ];
     if (!moetVrij) return { x, y, hoeken: rechthoek(x, y, t, n, L, B), ligging: opties[0].tekst };
+    // Efficiënte plek: de kavel schuift van de weg af gekeken zo ver naar de weg toe als kan. De voorzijde ligt dan aan de berm, zonder
+    // ongebruikt terrein tussen weg en station en met het kortste kabeltracé. Hij stopt bij het eerste uitgesloten gebied en op
+    // WEGAFSTAND vanaf de hartlijn van de weg (halve rijbaan plus berm). Alleen als de kavel naar een weg is gericht.
+    const naarWeg = naar.includes("de weg");
+    const wegAfstand = (px: number, py: number, o: { t: Vec; n: Vec; langs: number; diep: number }) => {
+      const vx = px - (o.diep / 2) * o.n[0], vy = py - (o.diep / 2) * o.n[1];
+      return Math.min(...[-1, 0, 1].map((k) => dichtstbij(wegen, vx + (k * o.langs * o.t[0]) / 2, vy + (k * o.langs * o.t[1]) / 2)?.d ?? Infinity));
+    };
+    const tegenWeg = (px: number, py: number, o: { t: Vec; n: Vec; langs: number; diep: number }) => {
+      if (!naarWeg) return { x: px, y: py };
+      let bx = px, by = py;
+      for (let s = 1; s <= 150; s++) {
+        const cx = px - s * o.n[0], cy = py - s * o.n[1];
+        if (!isVrij(cx, cy, o.t, o.n, o.langs, o.diep) || wegAfstand(cx, cy, o) < WEGAFSTAND) break;
+        bx = cx; by = cy;
+      }
+      return { x: bx, y: by };
+    };
     for (const o of opties)
       for (let straal = 0; straal <= 8; straal += 2)
         for (let hoek = 0; hoek < (straal ? 8 : 1); hoek++) {
           const px = x + straal * Math.cos((hoek * Math.PI) / 4), py = y + straal * Math.sin((hoek * Math.PI) / 4);
-          if (isVrij(px, py, o.t, o.n, o.langs, o.diep)) return { x: px, y: py, hoeken: rechthoek(px, py, o.t, o.n, o.langs, o.diep), ligging: o.tekst };
+          if (isVrij(px, py, o.t, o.n, o.langs, o.diep)) {
+            const m = tegenWeg(px, py, o);
+            return { x: m.x, y: m.y, hoeken: rechthoek(m.x, m.y, o.t, o.n, o.langs, o.diep), ligging: o.tekst };
+          }
         }
     // gedraaid past het niet: de kavel blijft liggen zoals hij in het raster is ingepast
     const lOW = inpas[Math.min(h - 1, Math.max(0, R.rij(y))) * w + Math.min(w - 1, Math.max(0, R.kol(x)))] === 2;
