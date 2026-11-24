@@ -58,6 +58,9 @@ export function panden(bbox: BBox) {
   return bagCache.data;
 }
 
+/** Kadastrale percelen (polygonen in RD) in het gegeven vak. */
+export const percelenRD = (bbox: BBox) => wfs("https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0", "kadastralekaart:Perceel", bbox);
+
 let wegCache: { sleutel: string; data: Promise<number[][][]> } | null = null;
 /** Hartlijnen van rijwegen op maaiveld (geen voet- en fietspaden), als lijnen in RD. */
 export function rijwegen(bbox: BBox): Promise<number[][][]> {

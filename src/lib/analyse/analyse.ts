@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Analyse, AutoScore, Kandidaat, LaagResultaat, LngLat, Lqs } from "../types";
 import { HAND_CRITERIA, STATION_TYPEN, TRACE } from "../config";
-import { BRONNEN, panden, rijwegen, type BBox } from "./bronnen";
+import { BRONNEN, panden, percelenRD, rijwegen, type BBox } from "./bronnen";
 import { Raster, png } from "./raster";
 import { naarRD, naarWGS } from "./rd";
 import { K_BEBOUWD, K_BORING, K_OVERIG, K_WEG, kostenveld, volgTrace, type Kostenveld } from "./trace";
@@ -248,7 +248,7 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   for (let r = 0; r < h; r += stap)
     for (let c = 0; c < w; c += stap) {
       const i = r * w + c;
-      if (inpas[i]) cellen.push({ i, s: autoTotaal(beoordeel(R.x(c), R.y(r)).auto) + Math.min(dBlok[i], 60) / 60 });
+      if (inpas[i]) cellen.push({ i, s: autoTotaal(beoordeel(R.x(c), R.y(r)).auto) });
     }
   cellen.sort((a, b) => b.s - a.s);
   const spreiding = Math.max(75, 2.5 * lqs.kavelL, schaal / 8);
@@ -324,6 +324,62 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     return { x, y, hoeken: rechthoek(x, y, [1, 0], [0, 1], lOW ? lqs.kavelL : lqs.kavelB, lOW ? lqs.kavelB : lqs.kavelL), ligging: "niet gedraaid: evenwijdig aan de weg past de kavel hier niet" };
   };
   const kavelVan = (hoeken: number[][]) => ({ type: "Polygon" as const, coordinates: [[...hoeken, hoeken[0]].map(naarWGS)] });
+  // --- op een groot terrein niet midden op het perceel, maar aan de rand bij de weg en het kabeltracé ---
+  // Binnen een zoekstraal wordt de inpasbare plek (met minimale afstand tot weg en bebouwing) gekozen met het kortste tracé
+  // (zonder tracé: het dichtst bij de weg). Een kavel die over meerdere kadastrale percelen valt, krijgt een straf: liever
+  // binnen één perceel, want dan hoeft er maar met één eigenaar te worden gesproken. Een kleine straf voor de verplaatsing
+  // voorkomt dat de locatie naar de andere kant van het terrein springt.
+  const perceelId = new Int32Array(n); // 0 = geen perceel bekend
+  try {
+    const scratch = new Uint8Array(n);
+    (await percelenRD(bbox)).forEach((f, idx) => {
+      const g = f.geometry as { type?: string; coordinates?: unknown } | null;
+      const delen = g?.type === "Polygon" ? [g.coordinates as number[][][]] : g?.type === "MultiPolygon" ? (g.coordinates as number[][][][]) : [];
+      for (const ringen of delen) {
+        R.polygoon(scratch, ringen);
+        const ys = ringen[0].map((q) => q[1]), r0 = Math.max(0, R.rij(Math.max(...ys))), r1 = Math.min(h - 1, R.rij(Math.min(...ys)));
+        for (let i = r0 * w; i < (r1 + 1) * w; i++) if (scratch[i]) { perceelId[i] = idx + 1; scratch[i] = 0; }
+      }
+    });
+  } catch { perceelId.fill(0); } // zonder kadasterdienst geldt alleen de afstand
+  const randStraal = Math.max(100, 3 * lqs.kavelL);
+  const naarRand = (x: number, y: number) => {
+    const { t, n: nv } = richting(x, y);
+    const L = Math.max(lqs.kavelB, lqs.kavelL), B = Math.min(lqs.kavelB, lqs.kavelL);
+    const c0 = R.kol(x), r0 = R.rij(y), rc = Math.ceil(randStraal / cel);
+    // meetpunten van de kavel: hoeken en zijmiddens
+    const meet = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [0, 0]].map(([a, b]) => [a * L / 2 * 0.98, b * B / 2 * 0.98]);
+    let beste = { x, y, kost: Infinity };
+    for (let r = Math.max(0, r0 - rc); r <= Math.min(h - 1, r0 + rc); r++)
+      for (let c = Math.max(0, c0 - rc); c <= Math.min(w - 1, c0 + rc); c++) {
+        const i = r * w + c;
+        if (!inpas[i] || !gebied[i]) continue;
+        // voldoende afstand: minimaal 5 m tot uitgesloten gebied (gebouwen, water, hinderzones) en 8 m tussen kavelrand en weg
+        if (dBlok[i] - Math.min(lqs.kavelB, lqs.kavelL) / 2 < 5) continue;
+        if (dWeg && dWeg[i] - Math.hypot(lqs.kavelB, lqs.kavelL) / 2 < 8) continue;
+        const px = R.x(c), py = R.y(r), d = Math.hypot(px - x, py - y);
+        if (d > randStraal) continue;
+        const basis = veld ? (isFinite(veld.kost[i]) ? veld.meters[i] : Infinity) : dWeg ? dWeg[i] : 0;
+        const percelen = new Set<number>();
+        for (const [a, b] of meet) {
+          const qx = px + a * t[0] + b * nv[0], qy = py + a * t[1] + b * nv[1];
+          const cc = R.kol(qx), rr = R.rij(qy);
+          if (cc >= 0 && rr >= 0 && cc < w && rr < h && perceelId[rr * w + cc]) percelen.add(perceelId[rr * w + cc]);
+        }
+        const kost = basis + 0.3 * d + 80 * Math.max(0, percelen.size - 1);
+        if (kost < beste.kost) beste = { x: px, y: py, kost };
+      }
+    return beste;
+  };
+  const verplaatst: { x: number; y: number; i: number }[] = [];
+  for (const g of gekozen) {
+    const nieuw = naarRand(g.x, g.y);
+    const vrij = verplaatst.every((v) => Math.hypot(v.x - nieuw.x, v.y - nieuw.y) >= spreiding / 2);
+    const x = vrij && isFinite(nieuw.kost) ? nieuw.x : g.x, y = vrij && isFinite(nieuw.kost) ? nieuw.y : g.y;
+    verplaatst.push({ x, y, i: Math.min(h - 1, Math.max(0, R.rij(y))) * w + Math.min(w - 1, Math.max(0, R.kol(x))) });
+  }
+  gekozen.splice(0, gekozen.length, ...verplaatst);
+
   const oud = lqs.kandidaten;
   const hergebruik = (p: LngLat, bron: string, naam?: string) =>
     oud.find((o) => o.bron === bron && (bron === "aangedragen" ? o.naam === naam : Math.hypot(...(naarRD(o.punt).map((v, j) => v - naarRD(p)[j]) as [number, number])) < 25));

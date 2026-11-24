@@ -71,6 +71,10 @@ export default function Portfolio() {
             <option value="zwolle">Zwolle Marslanden – TVS (template)</option>
             <option value="groningen">Groningen Eemspoort – TVS 20 velden</option>
             <option value="eindhoven">Eindhoven De Hurk – TVS 23 velden</option>
+            <option value="zwolle-berkum">Zwolle Berkum – TVS (volledig uitgewerkt)</option>
+            <option value="denbosch-vutter">Den Bosch De Vutter – TVS</option>
+            <option value="denbosch-maaspoort">Den Bosch Maaspoort – TVS</option>
+            <option value="denbosch-rosmalen">Rosmalen Kruisstraat – TVS</option>
             <option value="venlo">Venlo Trade Port – TVRS2</option>
           </select>
           <Link href="/lqs/nieuw" className="knop groen">Nieuwe LQS</Link>

@@ -1,6 +1,7 @@
 import { voerAnalyseUit } from "@/lib/analyse/analyse";
 import { verzamelFeiten } from "@/lib/analyse/feiten";
 import { bestemmingTekst, voorbeeldEigendom, voorbeeldHandmatig, voorbeeldVoorstel } from "@/lib/demoInvulling";
+import { werkBerkumUit } from "@/lib/demoBerkum";
 import { simuleerKlic } from "@/lib/klic/simuleer";
 import { haal, maak, wijzig } from "@/lib/repo";
 import { rangorde } from "@/lib/score";
@@ -16,7 +17,14 @@ export const maxDuration = 180;
 // overstromingsrisico, bermbreedte, inpassing) krijgen een FICTIEVE voorbeeldwaarde.
 // Met { herbereken: id } wordt een bestaande demo opnieuw doorgerekend en gevuld, met behoud van nummer en instellingen.
 // Voorbeeldscenario's in het verzorgingsgebied van Enexis: fictieve zoekgebieden op en rond bedrijventerreinen, elk met een
-// ander stationstype. Het eerste is de standaarddemo; kies een ander met { scenario: "groningen" | "eindhoven" | "venlo" }.
+// ander stationstype. Het eerste is de standaarddemo; kies een ander met { scenario: "groningen" | "eindhoven" | "venlo" | "denbosch-vutter" | "denbosch-maaspoort" | "denbosch-rosmalen" | "zwolle-berkum" }.
+/** Zoekcirkel van Enexis als veelhoek: middelpunt [lon, lat] en straal in meters. */
+const cirkel = ([lon, lat]: [number, number], straal: number, n = 48): [number, number][] =>
+  Array.from({ length: n }, (_, i) => {
+    const hoek = (2 * Math.PI * i) / n;
+    return [+(lon + (straal * Math.sin(hoek)) / (111320 * Math.cos((lat * Math.PI) / 180))).toFixed(6), +(lat + (straal * Math.cos(hoek)) / 110574).toFixed(6)];
+  });
+
 const SCENARIOS = [
   {
     id: "zwolle", naam: "Demo – Zwolle Marslanden", gemeente: "Zwolle", plaats: "Marslanden", stationType: "tvs",
@@ -32,6 +40,29 @@ const SCENARIOS = [
     id: "eindhoven", naam: "Demo – Eindhoven De Hurk", gemeente: "Eindhoven", plaats: "De Hurk", stationType: "tvs23",
     zoekgebied: [[5.422, 51.434], [5.448, 51.435], [5.452, 51.424], [5.436, 51.419], [5.423, 51.423]],
     aansluitpunt: [5.433, 51.428], aangedragen: [5.441, 51.4275],
+  },
+  // Rond 's-Hertogenbosch: zoekcirkels van 250-300 m op en aan de rand van bestaande bedrijven- en woongebieden.
+  {
+    id: "denbosch-vutter", naam: "Demo – 's-Hertogenbosch De Vutter", gemeente: "'s-Hertogenbosch", plaats: "De Vutter", stationType: "tvs",
+    zoekgebied: cirkel([5.2645, 51.7159], 250),
+    aansluitpunt: [5.26581, 51.71706], aangedragen: [5.26443, 51.7163],
+  },
+  {
+    id: "denbosch-maaspoort", naam: "Demo – 's-Hertogenbosch Maaspoort", gemeente: "'s-Hertogenbosch", plaats: "Maaspoort", stationType: "tvs",
+    zoekgebied: cirkel([5.296, 51.7187], 300),
+    aansluitpunt: [5.29797, 51.7199], aangedragen: [5.29665, 51.71852],
+  },
+  {
+    id: "denbosch-rosmalen", naam: "Demo – Rosmalen Kruisstraat", gemeente: "'s-Hertogenbosch", plaats: "Kruisstraat", stationType: "tvs",
+    zoekgebied: cirkel([5.3871, 51.7293], 300),
+    aansluitpunt: [5.38923, 51.73058], aangedragen: [5.38674, 51.72957],
+  },
+  // Zwolle Berkum: zoekcirkel van 250 m rond kadastraal perceel L 2795 (circa 5.400 m², bestemming Bedrijf – Nutsvoorziening).
+  // De plaatsing komt uit de analyse zelf; de planoloog-gegevens van deze demo staan in demoInvulling.ts.
+  {
+    id: "zwolle-berkum", naam: "Demo – Zwolle Berkum", gemeente: "Zwolle", plaats: "Berkum", stationType: "tvs",
+    zoekgebied: cirkel([6.10952, 52.47067], 250),
+    aansluitpunt: [6.11127, 52.47184], aangedragen: [6.11186, 52.47222],
   },
   {
     id: "venlo", naam: "Demo – Venlo Trade Port", gemeente: "Venlo", plaats: "Trade Port", stationType: "tvrs2",
@@ -84,12 +115,15 @@ export async function POST(req: Request) {
     kandidaten.forEach((k) => {
       k.sjabloon!.velden.notities = `${sjabloonVan({ ...l, analyse, kandidaten, voorkeurId }, k).veld("notities")} Demo: eigendom, planregels, stikstof, overstromingsrisico, bermbreedte, inpassing, de handmatige scores en het AI-voorstel zijn fictief ingevuld; de KLIC-leidingen zijn gesimuleerd.`;
     });
+    // uitgewerkte demo: de invulling van de planoloog bij de voorkeurslocatie, de review en het colofon
+    const uitwerking = plaats === "Berkum" ? werkBerkumUit(kandidaten, voorkeurId) : null;
     const basis = { ...l, analyse, kandidaten, voorkeurId, voorkeurMotivatie };
     const teksten = maakTeksten(basis);
     teksten.aanleiding += " Dit is een demo: het zoekgebied is fictief, de velden van de planoloog en het AI-voorstel bevatten voorbeeldwaarden en de KLIC-gegevens zijn gesimuleerd.";
     return Response.json(await wijzig(l.id, {
       analyse, kandidaten, voorkeurId, voorkeurMotivatie, teksten, status: "Rapport",
-      colofon: { plaats, projectnummer: "ID000000 (demo)", versie: "V0.1", specialist: "Planoloog Enexis", email: "voor.achternaam@enexis.nl" },
+      colofon: uitwerking?.colofon ?? { plaats, projectnummer: "ID000000 (demo)", versie: "V0.1", specialist: "Planoloog Enexis", email: "voor.achternaam@enexis.nl" },
+      ...(uitwerking ? { review: uitwerking.review } : {}),
     }));
   } catch (e) {
     // Zonder kaartdiensten blijft de demo bruikbaar: de analyse is dan vanuit de werkplek te starten.
