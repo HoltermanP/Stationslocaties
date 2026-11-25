@@ -146,11 +146,48 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   const wegLaag = lagen.find((l) => l.rol === "weg");
   const dWoning = woningLaag?.status === "ok" ? R.afstand(woningLaag.ruw) : null;
   const dWeg = wegLaag?.status === "ok" ? R.afstand(wegLaag.ruw) : null;
+  // rijwegen (zonder voet- en fietspaden): een station moet met zwaar materieel bereikbaar zijn
+  const wegen = await rijwegen(bbox).catch(() => [] as number[][][]);
+  const rijMask = new Uint8Array(n);
+  for (const lijn of wegen) R.lijn(rijMask, lijn);
+  const dRij = wegen.length ? R.afstand(rijMask) : null;
   const kruisLaag = lagen.find((l) => l.rol === "kruising");
   const dKruising = kruisLaag?.status === "ok" ? R.afstand(kruisLaag.ruw) : null;
   // aangeleverde kabel- en leidinglagen: afstandskaart per laag
   const leidingLagen = lagen.filter((l) => l.functie && l.status === "ok" && l.aantal > 0).map((l) => ({ l, d: R.afstand(l.ruw) }));
   const netLagen = leidingLagen.filter((x) => x.l.functie === "net");
+  // liggende middenspanning: KLIC-thema middenspanning of het aangeleverde net van de netbeheerder
+  const msLagen = leidingLagen.filter((x) => x.l.functie === "net" || /middenspanning/i.test(`${x.l.id} ${x.l.naam}`));
+  const dMs = msLagen.length ? msLagen[0].d.map((v, i) => Math.min(...msLagen.map((m) => m.d[i]))) : null;
+  const klicLagen = leidingLagen.filter((x) => x.l.functie === "leidingen");
+  const dLeiding = klicLagen.length ? klicLagen[0].d.map((v, i) => Math.min(...klicLagen.map((m) => m.d[i]))) : null;
+  const pandLaag = lagen.find((l) => l.rol === "bebouwing");
+  const dPand = pandLaag?.status === "ok" ? R.afstand(pandLaag.ruw) : null;
+  // kadastrale percelen: nummer per cel, oppervlakte per perceel en de afstand tot de dichtstbijzijnde perceelgrens
+  const perceelId = new Int32Array(n); // 0 = geen perceel bekend
+  const perceelOpp: number[] = [0];
+  let dGrens: Float32Array | null = null;
+  try {
+    const scratch = new Uint8Array(n);
+    (await percelenRD(bbox)).forEach((f, idx) => {
+      perceelOpp[idx + 1] = Number(f.properties?.kadastraleGrootteWaarde ?? 0);
+      const g = f.geometry as { type?: string; coordinates?: unknown } | null;
+      const delen = g?.type === "Polygon" ? [g.coordinates as number[][][]] : g?.type === "MultiPolygon" ? (g.coordinates as number[][][][]) : [];
+      for (const ringen of delen) {
+        R.polygoon(scratch, ringen);
+        const ys = ringen[0].map((q) => q[1]), r0 = Math.max(0, R.rij(Math.max(...ys))), r1 = Math.min(h - 1, R.rij(Math.min(...ys)));
+        for (let i = r0 * w; i < (r1 + 1) * w; i++) if (scratch[i]) { perceelId[i] = idx + 1; scratch[i] = 0; }
+      }
+    });
+    const grens = new Uint8Array(n);
+    for (let r = 0; r < h; r++)
+      for (let c = 0; c < w; c++) {
+        const i = r * w + c;
+        if ((c + 1 < w && perceelId[i] !== perceelId[i + 1]) || (r + 1 < h && perceelId[i] !== perceelId[i + w])) grens[i] = 1;
+      }
+    dGrens = R.afstand(grens);
+  } catch { perceelId.fill(0); } // zonder kadasterdienst vervalt de toets op het perceel
+  const halfKort = Math.min(lqs.kavelB, lqs.kavelL) / 2;
   let net: [number, number];
   let netBron: string;
   if (lqs.aansluitpunt) { net = naarRD(lqs.aansluitpunt); netBron = "aansluitpunt"; }
@@ -199,11 +236,14 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     }
     const tr = veld && isFinite(veld.kost[i]) ? veld.meters[i] : null;
     const auto: Record<string, AutoScore> = {
-      ruimte: { waarde: rond(ruimte), score: trap(ruimte, [5, 15, 30, 60], true), toelichting: `${rond(ruimte)} m vrije ruimte rondom de kavel` },
+      // genoeg is genoeg: een station heeft werkruimte nodig, geen open veld eromheen
+      ruimte: { waarde: rond(ruimte), score: trap(ruimte, [1, 3, 6, 10], true), toelichting: `${rond(ruimte)} m vrije ruimte rondom de kavel` },
       woningen: dWoning
         ? { waarde: rond(dWoning[i]), score: trap(dWoning[i], [15, 30, 60, 120], true), toelichting: dWoning[i] > 1e5 ? "geen woningen in de omgeving" : `${rond(dWoning[i])} m tot dichtstbijzijnde woning` }
         : { waarde: null, score: 3, toelichting: "woningdata niet beschikbaar – handmatig controleren" },
-      weg: dWeg
+      weg: dRij
+        ? { waarde: rond(dRij[i]), score: trap(dRij[i], [25, 45, 80, 150], false), toelichting: dRij[i] > 1e5 ? "geen rijweg in de omgeving" : `${rond(dRij[i])} m tot de as van de dichtstbijzijnde rijweg` }
+        : dWeg
         ? { waarde: rond(dWeg[i]), score: trap(dWeg[i], [20, 40, 80, 150], false), toelichting: dWeg[i] > 1e5 ? "geen weg in de omgeving" : `${rond(dWeg[i])} m tot dichtstbijzijnde weg` }
         : { waarde: null, score: 3, toelichting: "wegdata niet beschikbaar – handmatig controleren" },
       net: tr !== null
@@ -211,6 +251,22 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
         : dNet !== null
         ? { waarde: rond(dNet), score: trap(dNet, [50, 150, 300, 600], false), toelichting: `${rond(dNet)} m hemelsbreed tot het aangeleverde net` }
         : { waarde: rond(dn), score: trap(dn / schaal, [0.1, 0.2, 0.35, 0.5], false), toelichting: `${rond(dn)} m hemelsbreed tot ${netBron}` },
+      // een verdeelstation hoort bij de bebouwing die het voedt: aan de rand van wijk of bedrijventerrein, niet in het open veld
+      bebouwd: dPand
+        ? { waarde: rond(dPand[i]), score: trap(dPand[i], [75, 150, 300, 500], false), toelichting: dPand[i] > 1e5 ? "geen bebouwing in de omgeving" : `${rond(dPand[i])} m tot de dichtstbijzijnde bebouwing` }
+        : { waarde: null, score: 3, toelichting: "bebouwingsdata niet beschikbaar – handmatig controleren" },
+      ms: dMs
+        ? { waarde: rond(dMs[i]), score: trap(dMs[i], [25, 50, 100, 200], false), toelichting: `${rond(dMs[i])} m tot de dichtstbijzijnde liggende MS-kabel` }
+        : { waarde: null, score: 3, toelichting: "geen MS-kabels geladen (KLIC of net van de netbeheerder) – handmatig controleren" },
+      perceel: (() => {
+        const opp = perceelOpp[perceelId[i]] ?? 0;
+        if (!dGrens || !perceelId[i]) return { waarde: null, score: 3, toelichting: "kadastrale kaart niet beschikbaar – handmatig controleren" };
+        // afstand van de kavelrand tot de perceelgrens of tot wat het terrein begrenst (weg, water, bebouwing)
+        const rand = Math.max(0, Math.min(dGrens[i], dBlok[i]) - halfKort);
+        const groot = opp > 20000;
+        const score = groot && rand > 15 ? 1 : trap(rand, [8, 15, 30, 60], false);
+        return { waarde: rond(rand), score, toelichting: `kavel op ${rond(rand)} m van de rand van een perceel van ${rond(opp).toLocaleString("nl-NL")} m²${groot && rand > 15 ? ": midden op een groot perceel" : ""}` };
+      })(),
       aandacht: { waarde: geraakt.length, score: Math.max(1, 5 - 2 * geraakt.length), toelichting: geraakt.length ? `raakt: ${geraakt.join(", ")}` : "geen aandachtsgebieden geraakt" },
       kruising: dKruising
         ? { waarde: rond(dKruising[i]), score: trap(dKruising[i], [25, 40, 60, 100], true), toelichting: dKruising[i] > 1e5 ? "geen kruising in de omgeving" : `${rond(dKruising[i])} m tot de dichtstbijzijnde kruising` }
@@ -250,20 +306,27 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
       const i = r * w + c;
       if (inpas[i]) cellen.push({ i, s: autoTotaal(beoordeel(R.x(c), R.y(r)).auto) });
     }
+  // een station moet vanaf een rijweg bereikbaar zijn: alleen plekken binnen MAX_RIJWEG m van een rijweg, tenzij die er niet zijn
+  const MAX_RIJWEG = 50;
+  if (dRij) {
+    const bereikbaar = cellen.filter((k) => dRij[k.i] <= MAX_RIJWEG);
+    if (bereikbaar.length) cellen.splice(0, cellen.length, ...bereikbaar);
+  }
   cellen.sort((a, b) => b.s - a.s);
   const spreiding = Math.max(75, 2.5 * lqs.kavelL, schaal / 8);
   const gekozen: { x: number; y: number; i: number }[] = [];
+  const aangedragenRD = lqs.aangedragen.map((a) => naarRD(a.punt));
   for (const k of cellen) {
     if (gekozen.length >= Math.max(1, 6 - lqs.aangedragen.length)) break; // de template van Enexis heeft zes locatiepagina's (A t/m F)
     const x = R.x(k.i % w), y = R.y(Math.floor(k.i / w));
-    if (gekozen.every((g) => Math.hypot(g.x - x, g.y - y) >= spreiding)) gekozen.push({ x, y, i: k.i });
+    // niet nog een locatie op de plek die al is aangedragen: die wordt apart beoordeeld
+    if (gekozen.every((g) => Math.hypot(g.x - x, g.y - y) >= spreiding) && aangedragenRD.every((g) => Math.hypot(g[0] - x, g[1] - y) >= spreiding / 2)) gekozen.push({ x, y, i: k.i });
   }
 
   const leegHand = () => Object.fromEntries(HAND_CRITERIA.map((c) => [c.id, { score: null, notitie: "" }]));
   // --- kavel richten: lange zijde evenwijdig aan de dichtstbijzijnde rijweg (programma van eisen Enexis), voorzijde naar de weg.
   // Zonder weg binnen 150 m volgt de kavel de richting van het dichtstbijzijnde gebouw; anders ligt hij noord-zuid. ---
   type Vec = [number, number];
-  const wegen = await rijwegen(bbox).catch(() => [] as number[][][]);
   const gevels = (await panden(bbox).catch(() => [])).flatMap((f) => {
     const g = f.geometry;
     return g?.type === "Polygon" ? [(g.coordinates as number[][][])[0]] : g?.type === "MultiPolygon" ? (g.coordinates as number[][][][]).map((q) => q[0]) : [];
@@ -326,24 +389,14 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   const kavelVan = (hoeken: number[][]) => ({ type: "Polygon" as const, coordinates: [[...hoeken, hoeken[0]].map(naarWGS)] });
   // --- op een groot terrein niet midden op het perceel, maar aan de rand bij de weg en het kabeltracé ---
   // Binnen een zoekstraal wordt de inpasbare plek (met minimale afstand tot weg en bebouwing) gekozen met het kortste tracé
-  // (zonder tracé: het dichtst bij de weg). Een kavel die over meerdere kadastrale percelen valt, krijgt een straf: liever
-  // binnen één perceel, want dan hoeft er maar met één eigenaar te worden gesproken. Een kleine straf voor de verplaatsing
-  // voorkomt dat de locatie naar de andere kant van het terrein springt.
-  const perceelId = new Int32Array(n); // 0 = geen perceel bekend
-  try {
-    const scratch = new Uint8Array(n);
-    (await percelenRD(bbox)).forEach((f, idx) => {
-      const g = f.geometry as { type?: string; coordinates?: unknown } | null;
-      const delen = g?.type === "Polygon" ? [g.coordinates as number[][][]] : g?.type === "MultiPolygon" ? (g.coordinates as number[][][][]) : [];
-      for (const ringen of delen) {
-        R.polygoon(scratch, ringen);
-        const ys = ringen[0].map((q) => q[1]), r0 = Math.max(0, R.rij(Math.max(...ys))), r1 = Math.min(h - 1, R.rij(Math.min(...ys)));
-        for (let i = r0 * w; i < (r1 + 1) * w; i++) if (scratch[i]) { perceelId[i] = idx + 1; scratch[i] = 0; }
-      }
-    });
-  } catch { perceelId.fill(0); } // zonder kadasterdienst geldt alleen de afstand
+  // (zonder tracé: het dichtst bij de weg), dicht bij de liggende MS-kabels en aan de rand van het perceel. Een kavel die
+  // over meerdere kadastrale percelen valt of waar kabels van derden onder liggen, krijgt een straf: liever binnen één
+  // perceel, want dan hoeft er maar met één eigenaar te worden gesproken. Een kleine straf voor de verplaatsing voorkomt
+  // dat de locatie naar de andere kant van het terrein springt.
   const randStraal = Math.max(100, 3 * lqs.kavelL);
-  const naarRand = (x: number, y: number) => {
+  const botst = (px: number, py: number, bezet: { x: number; y: number }[]) =>
+    bezet.some((v) => Math.hypot(v.x - px, v.y - py) < 0.8 * spreiding) || aangedragenRD.some((v) => Math.hypot(v[0] - px, v[1] - py) < spreiding / 2);
+  const naarRand = (x: number, y: number, bezet: { x: number; y: number }[]) => {
     const { t, n: nv } = richting(x, y);
     const L = Math.max(lqs.kavelB, lqs.kavelL), B = Math.min(lqs.kavelB, lqs.kavelL);
     const c0 = R.kol(x), r0 = R.rij(y), rc = Math.ceil(randStraal / cel);
@@ -357,8 +410,9 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
         // voldoende afstand: minimaal 5 m tot uitgesloten gebied (gebouwen, water, hinderzones) en 8 m tussen kavelrand en weg
         if (dBlok[i] - Math.min(lqs.kavelB, lqs.kavelL) / 2 < 5) continue;
         if (dWeg && dWeg[i] - Math.hypot(lqs.kavelB, lqs.kavelL) / 2 < 8) continue;
+        if (dRij && dRij[i] > MAX_RIJWEG) continue;
         const px = R.x(c), py = R.y(r), d = Math.hypot(px - x, py - y);
-        if (d > randStraal) continue;
+        if (d > randStraal || botst(px, py, bezet)) continue;
         const basis = veld ? (isFinite(veld.kost[i]) ? veld.meters[i] : Infinity) : dWeg ? dWeg[i] : 0;
         const percelen = new Set<number>();
         for (const [a, b] of meet) {
@@ -366,23 +420,35 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
           const cc = R.kol(qx), rr = R.rij(qy);
           if (cc >= 0 && rr >= 0 && cc < w && rr < h && perceelId[rr * w + cc]) percelen.add(perceelId[rr * w + cc]);
         }
-        const kost = basis + 0.3 * d + 80 * Math.max(0, percelen.size - 1);
+        const rand = dGrens ? Math.max(0, Math.min(dGrens[i], dBlok[i]) - halfKort) : 0;
+        const inLeiding = dLeiding && dLeiding[i] < Math.hypot(lqs.kavelB, lqs.kavelL) / 2 ? 1 : 0;
+        const kost = basis + 0.3 * d + 80 * Math.max(0, percelen.size - 1)
+          + 1.5 * Math.max(0, rand - 4) // aan de rand van het perceel, niet middenop
+          + (dMs ? 0.5 * Math.min(dMs[i], 200) : 0) // dicht bij de liggende MS-kabels
+          + (dRij ? 1.2 * Math.max(0, dRij[i] - 20) : 0) // aan een rijweg, niet aan een voet- of fietspad diep in een park
+          + 60 * inLeiding; // geen kabels of leidingen van derden onder de kavel
         if (kost < beste.kost) beste = { x: px, y: py, kost };
       }
     return beste;
   };
   const verplaatst: { x: number; y: number; i: number }[] = [];
   for (const g of gekozen) {
-    const nieuw = naarRand(g.x, g.y);
-    const vrij = verplaatst.every((v) => Math.hypot(v.x - nieuw.x, v.y - nieuw.y) >= spreiding / 2);
-    const x = vrij && isFinite(nieuw.kost) ? nieuw.x : g.x, y = vrij && isFinite(nieuw.kost) ? nieuw.y : g.y;
+    const nieuw = naarRand(g.x, g.y, verplaatst);
+    // geen betere plek in de buurt: de locatie blijft staan, tenzij daar inmiddels een andere locatie ligt
+    if (!isFinite(nieuw.kost) && botst(g.x, g.y, verplaatst)) continue;
+    const { x, y } = isFinite(nieuw.kost) ? nieuw : g;
     verplaatst.push({ x, y, i: Math.min(h - 1, Math.max(0, R.rij(y))) * w + Math.min(w - 1, Math.max(0, R.kol(x))) });
   }
   gekozen.splice(0, gekozen.length, ...verplaatst);
 
   const oud = lqs.kandidaten;
-  const hergebruik = (p: LngLat, bron: string, naam?: string) =>
-    oud.find((o) => o.bron === bron && (bron === "aangedragen" ? o.naam === naam : Math.hypot(...(naarRD(o.punt).map((v, j) => v - naarRD(p)[j]) as [number, number])) < 25));
+  // elke eerdere locatie wordt hooguit één keer hergebruikt, anders krijgen twee nieuwe locaties hetzelfde id
+  const hergebruikt = new Set<string>();
+  const hergebruik = (p: LngLat, bron: string, naam?: string) => {
+    const o = oud.find((o) => !hergebruikt.has(o.id) && o.bron === bron && (bron === "aangedragen" ? o.naam === naam : Math.hypot(...(naarRD(o.punt).map((v, j) => v - naarRD(p)[j]) as [number, number])) < 25));
+    if (o) hergebruikt.add(o.id);
+    return o;
+  };
 
   const kandidaten: Kandidaat[] = [];
   gekozen.forEach((g0, idx) => {

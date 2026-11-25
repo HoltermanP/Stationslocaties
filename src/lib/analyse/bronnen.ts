@@ -110,6 +110,11 @@ export const BRONNEN: Bron[] = [
     haal: async (b) => (await ogc("terrein_vlak", b)).filter((f) => String(f.properties?.typelandgebruik ?? "").startsWith("bos")),
   },
   {
+    // Terreinen met een eigen functie waar een station niet past: begraafplaats, sportvelden, volkstuinen en dergelijke.
+    id: "functiegebied", naam: "Begraafplaatsen, sportvelden en volkstuinen", thema: "Bebouwing", bron: "BRT TOP10NL, functioneel gebied", soort: "uitsluiten", buffer: 3, kleur: "#a21caf",
+    haal: async (b) => (await ogc("functioneel_gebied_vlak", b)).filter((f) => /begraafplaats|sport|volkstuin|golf|ijsbaan|renbaan|zwembad|speel|camping|dierentuin|tennis|zonnepark/i.test(String(f.properties?.typefunctioneelgebied ?? ""))),
+  },
+  {
     id: "rijksmonument", naam: "Rijksmonumenten", thema: "Erfgoed", bron: "RCE", soort: "uitsluiten", buffer: 10, kleur: "#7e22ce",
     haal: (b) => wfs(RCE, "openbaar:rijksmonumentcontouren", b),
   },

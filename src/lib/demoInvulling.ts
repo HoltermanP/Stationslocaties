@@ -116,7 +116,12 @@ const perceelAantal = (k: Kandidaat) => k.feiten?.percelen.length ?? 0;
  * eigendom en inpassing beoordeelt de planoloog zelf (het voorstel blijft ernaast staan en kan nog worden overgenomen).
  */
 export function voorbeeldHandmatig(v: Record<string, Voorstel>, inpassing: string): Record<string, HandScore> {
-  const over = (id: string): HandScore => ({ score: v[id]?.score ?? null, notitie: v[id]?.motivatie ?? "", ai: !!v[id]?.score });
+  // geen bestemming in de landelijke voorziening: de planoloog zoekt het na in het Omgevingsloket (in de demo fictief)
+  const nagezocht: Record<string, HandScore> = {
+    bestemming: { score: 3, ai: false, notitie: "Geen bestemming gevonden in de landelijke voorziening. In het Omgevingsloket nagezocht (fictief in de demo): Groen; een nutsvoorziening van deze omvang vraagt een omgevingsvergunning met afwijking (BOPA)." },
+    procedure: { score: 3, ai: false, notitie: "Omgevingsvergunning met buitenplanse afwijking (BOPA), reguliere procedure; voor de aanlegfase is een AERIUS-berekening nodig." },
+  };
+  const over = (id: string): HandScore => (v[id]?.score == null && nagezocht[id] ? nagezocht[id] : { score: v[id]?.score ?? null, notitie: v[id]?.motivatie ?? "", ai: !!v[id]?.score });
   return {
     bestemming: over("bestemming"),
     klic: over("klic"),

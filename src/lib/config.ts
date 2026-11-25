@@ -50,10 +50,15 @@ export const DOORLOOPTIJD_DAGEN = 21; // gewenste doorlooptijd Enexis: drie weke
 export const JAARVOLUME = 120; // verwacht aantal LQS'en per jaar
 
 export const AUTO_CRITERIA = [
-  { id: "ruimte", naam: "Beschikbare ruimte rond kavel", gewicht: 2 },
+  { id: "ruimte", naam: "Beschikbare ruimte rond kavel", gewicht: 1 },
   { id: "woningen", naam: "Afstand tot woningen (hinder)", gewicht: 2 },
   { id: "weg", naam: "Bereikbaarheid vanaf de weg", gewicht: 2 },
   { id: "net", naam: "Afstand tot aansluitpunt / zwaartepunt", gewicht: 3 },
+  // gangbare praktijk bij verdeelstations in het MS-net: bij de bebouwing die het station voedt, dicht bij de liggende
+  // MS-kabels en op een klein stuk grond aan de rand van een perceel (groenstrook, berm, hoek van een terrein)
+  { id: "bebouwd", naam: "Ligging bij de bebouwde omgeving", gewicht: 2 },
+  { id: "ms", naam: "Afstand tot liggende MS-kabels", gewicht: 2 },
+  { id: "perceel", naam: "Ligging aan de rand van het perceel", gewicht: 2 },
   { id: "aandacht", naam: "Vrij van aandachtsgebieden", gewicht: 2 },
   // uit het programma van eisen van Enexis voor een TVS (menukaart april 2024)
   { id: "kruising", naam: "Afstand tot een kruising", gewicht: 1 },

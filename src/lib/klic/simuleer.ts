@@ -5,8 +5,9 @@ import { THEMA } from "./lees";
 
 // GESIMULEERDE KLIC-levering voor demo's: geen gegevens van het Kadaster of van netbeheerders.
 // De leidingen volgen de echte rijwegen (BRT) op een vaste afstand uit de wegas, zoals kabels en leidingen in de praktijk
-// in berm en trottoir liggen; daarnaast kruist één fictieve hogedrukgasleiding het zoekgebied. Ligging, aantallen en
-// beheerders zijn verzonnen. De lagen krijgen dezelfde vorm als een ingelezen levering (verwerk.ts), zodat analyse,
+// in berm en trottoir liggen. Middenspanning ligt niet in elke straat: de MS-kabels lopen als strengen vanaf het
+// aansluitpunt langs de kortste route over de weg naar de randen van het gebied. In een deel van de gebieden kruist een
+// fictieve hogedrukgasleiding de rand van het zoekgebied. Ligging, aantallen en beheerders zijn verzonnen. De lagen krijgen dezelfde vorm als een ingelezen levering (verwerk.ts), zodat analyse,
 // kaart en rapport er net zo mee werken.
 
 /** Afstand uit de wegas (m, + is rechts van de rijrichting van de hartlijn), minimale weglengte per thema en kenmerken van de leiding. */
@@ -62,7 +63,40 @@ function stuk(lijn: number[][], van: number, tot: number) {
   return uit;
 }
 
-export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; klic: KlicInfo } | null> {
+export type KlicBeheer = { elektra: string; gas: string; water: string };
+const STANDAARD_BEHEER: KlicBeheer = { elektra: "Enexis", gas: "Enexis", water: "Vitens" };
+
+/** Wegen waarlangs een MS-streng ligt: kortste routes over de weg van het startpunt naar de vier randen van het gebied. */
+function msRoutes(wegen: number[][][], start: number[]): Set<number> {
+  const sleutel = (p: number[]) => `${Math.round(p[0])},${Math.round(p[1])}`;
+  const knopen = new Map<string, { p: number[]; buren: { naar: string; weg: number; len: number }[] }>();
+  const knoop = (p: number[]) => { const k = sleutel(p); if (!knopen.has(k)) knopen.set(k, { p, buren: [] }); return k; };
+  wegen.forEach((weg, i) => {
+    const a = knoop(weg[0]), b = knoop(weg[weg.length - 1]), len = lengte(weg);
+    knopen.get(a)!.buren.push({ naar: b, weg: i, len });
+    knopen.get(b)!.buren.push({ naar: a, weg: i, len });
+  });
+  if (!knopen.size) return new Set();
+  let begin = "", dMin = Infinity;
+  for (const [k, v] of knopen) { const d = Math.hypot(v.p[0] - start[0], v.p[1] - start[1]); if (d < dMin) { dMin = d; begin = k; } }
+  const afstand = new Map<string, number>([[begin, 0]]), via = new Map<string, { van: string; weg: number }>(), klaar = new Set<string>();
+  for (;;) {
+    let nu = "", best = Infinity;
+    for (const [k, d] of afstand) if (!klaar.has(k) && d < best) { best = d; nu = k; }
+    if (!nu) break;
+    klaar.add(nu);
+    for (const b of knopen.get(nu)!.buren) if (best + b.len < (afstand.get(b.naar) ?? Infinity)) { afstand.set(b.naar, best + b.len); via.set(b.naar, { van: nu, weg: b.weg }); }
+  }
+  const uit = new Set<number>(), p0 = knopen.get(begin)!.p;
+  for (const [rx, ry] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    let doel = "", ver = 60; // alleen een streng als er in die richting ook echt weg ligt
+    for (const k of klaar) { const p = knopen.get(k)!.p, v = (p[0] - p0[0]) * rx + (p[1] - p0[1]) * ry; if (v > ver) { ver = v; doel = k; } }
+    for (let k = doel; via.has(k); k = via.get(k)!.van) uit.add(via.get(k)!.weg);
+  }
+  return uit;
+}
+
+export async function simuleerKlic(l: Lqs, beheer: KlicBeheer = STANDAARD_BEHEER): Promise<{ eigenLagen: EigenLaag[]; klic: KlicInfo } | null> {
   if (!l.zoekgebied) return null;
   const rnd = reeks(l.code ?? l.id), tussen = ([a, b]: [number, number]) => Math.round((a + rnd() * (b - a)) * 100) / 100, kies = <T,>(x: T[]) => x[Math.floor(rnd() * x.length)];
   const p = l.zoekgebied.coordinates[0].map(naarRD), xs = p.map((c) => c[0]), ys = p.map((c) => c[1]);
@@ -73,12 +107,17 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
   const themas: Record<string, Lijn[]> = {};
   const voeg = (thema: string, coordinates: number[][], props: Record<string, unknown>) => (themas[thema] ??= []).push({ coordinates, props: { thema, gesimuleerd: true, ...props } });
 
-  for (const weg of wegen) {
+  const beheerder = (thema: string, standaard: string) =>
+    thema === "laagspanning" || thema === "middenspanning" ? `${beheer.elektra} (elektriciteit)` : thema === "gasLageDruk" ? `${beheer.gas} (gas)` : thema === "water" ? `${beheer.water} (drinkwater)` : standaard;
+  const midden = [(vak[0] + vak[2]) / 2, (vak[1] + vak[3]) / 2];
+  const ms = msRoutes(wegen, l.aansluitpunt ? naarRD(l.aansluitpunt) : midden);
+  for (const [nr, weg] of wegen.entries()) {
     const len = lengte(weg);
     for (const t of LIGGING) {
-      if (len < t.vanaf) continue;
+      // middenspanning alleen langs de strengen; zonder samenhangend wegennet langs de langere wegen
+      if (t.thema === "middenspanning" ? (ms.size ? !ms.has(nr) : len < t.vanaf) : len < t.vanaf) continue;
       const hoofd = evenwijdig(weg, t.afstand);
-      const eigen = { beheerder: t.beheerder, materiaal: kies(t.materiaal), kenmerk: kies(t.kenmerk), aanlegjaar: 1965 + Math.floor(rnd() * 58) };
+      const eigen = { beheerder: beheerder(t.thema, t.beheerder), materiaal: kies(t.materiaal), kenmerk: kies(t.kenmerk), aanlegjaar: 1965 + Math.floor(rnd() * 58) };
       // hoofdleiding in stukken van 40-120 m, met een kleine wisseling van diepte en soms van materiaal
       for (let s = 0; s < len; ) {
         const e = Math.min(len, s + 40 + rnd() * 80);
@@ -96,11 +135,15 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
       }
     }
   }
-  // transportleiding: recht door het zoekgebied, van een kwart van de westrand naar driekwart van de oostrand
-  const [x0, y0, x1, y1] = vak;
-  voeg("gasHogeDruk", [[x0, y0 + 0.3 * (y1 - y0)], [x0 + 0.45 * (x1 - x0), y0 + 0.42 * (y1 - y0)], [x1, y0 + 0.78 * (y1 - y0)]], {
-    beheerder: "Gasunie Transport Services", kenmerk: "Ø 508, 40 bar", materiaal: "Staal", diepteM: 1.2, aanlegjaar: 1974, aard: "transportleiding",
-  });
+  // transportleiding: in ruim een derde van de gebieden kruist een hogedrukgasleiding de rand van het zoekgebied
+  if (rnd() < 0.4) {
+    const hoek = rnd() * Math.PI, tx = Math.cos(hoek), ty = Math.sin(hoek), half = Math.max(vak[2] - vak[0], vak[3] - vak[1]) / 2;
+    const uit = (0.45 + 0.25 * rnd()) * (half - 100) * (rnd() < 0.5 ? 1 : -1);
+    const cx = midden[0] - ty * uit, cy = midden[1] + tx * uit, knik = (rnd() - 0.5) * 30;
+    voeg("gasHogeDruk", [[cx - tx * half * 1.3, cy - ty * half * 1.3], [cx - ty * knik, cy + tx * knik], [cx + tx * half * 1.3, cy + ty * half * 1.3]], {
+      beheerder: "Gasunie Transport Services", kenmerk: "Ø 508, 40 bar", materiaal: "Staal", diepteM: 1.2, aanlegjaar: 1974, aard: "transportleiding",
+    });
+  }
 
   const afger = (c: number[][]) => c.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
   const lagen: EigenLaag[] = Object.entries(themas).map(([thema, lijnen]) => {
@@ -119,7 +162,7 @@ export async function simuleerKlic(l: Lqs): Promise<{ eigenLagen: EigenLaag[]; k
     meldnummer: `SIMULATIE-${l.code}`,
     ingelezenOp: new Date().toISOString(),
     bron: "simulatie",
-    netbeheerders: ["Enexis (elektriciteit en gas)", "Gasunie Transport Services (gas hoge druk)", "Vitens (drinkwater)", "Gemeente (riolering)", "Glasvezelnet (telecom)"].map((naam, i) => ({ code: `SIM${i + 1}`, naam: `${naam} – gesimuleerd`, geleverd: true })),
+    netbeheerders: [beheer.elektra === beheer.gas ? `${beheer.elektra} (elektriciteit en gas)` : `${beheer.elektra} (elektriciteit)`, ...(beheer.elektra === beheer.gas ? [] : [`${beheer.gas} (gas)`]), ...(themas.gasHogeDruk ? ["Gasunie Transport Services (gas hoge druk)"] : []), `${beheer.water} (drinkwater)`, "Gemeente (riolering)", "Glasvezelnet (telecom)"].map((naam, i) => ({ code: `SIM${i + 1}`, naam: `${naam} – gesimuleerd`, geleverd: true })),
     themas: Object.entries(themas).map(([thema, lijnen]) => ({ thema, naam: (THEMA[thema] ?? { naam: thema }).naam, leidingen: lijnen.length })),
   };
   return { eigenLagen: [...l.eigenLagen.filter((e) => !e.id.startsWith("klic-")), ...lagen], klic };

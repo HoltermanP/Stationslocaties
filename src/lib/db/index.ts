@@ -44,14 +44,32 @@ async function open(): Promise<Db> {
   return db;
 }
 
+// Meegeleverde demo's (demo/demo-data.json.gz, gemaakt met `npm run demodata`). Een lege database wordt er bij de eerste
+// start mee gevuld, zodat een verse kopie van de repository direct de uitgewerkte demo's toont.
+const DEMO_DATA = "demo/demo-data.json.gz";
+async function laadDemoData(db: Db, alleenAlsLeeg: boolean): Promise<number> {
+  const { existsSync, readFileSync } = await import("node:fs");
+  const { gunzipSync } = await import("node:zlib");
+  if (!existsSync(DEMO_DATA)) return 0;
+  const bestaand = new Set((await db.select({ id: schema.lqs.id }).from(schema.lqs)).map((r) => r.id));
+  if (alleenAlsLeeg && bestaand.size) return 0;
+  const rijen = JSON.parse(gunzipSync(readFileSync(DEMO_DATA)).toString("utf8")) as (typeof schema.lqs.$inferInsert)[];
+  let aantal = 0;
+  for (const rij of rijen) if (!bestaand.has(rij.id)) { await db.insert(schema.lqs).values(rij); aantal++; }
+  return aantal;
+}
+/** Zet de meegeleverde demo's terug die nog niet in de database staan; geeft het aantal toegevoegde LQS'en. */
+export const zetDemoDataTerug = async () => laadDemoData(await getDb(), false);
+
 // De verbinding blijft bij hot reload bestaan; het schema wordt opnieuw bijgewerkt zodra DDL_VERSIE verandert.
-const DDL_VERSIE = 3;
+const DDL_VERSIE = 4;
 const g = globalThis as unknown as { __lqsDb?: Promise<Db>; __lqsSchema?: Promise<Db>; __lqsSchemaVersie?: number };
 export function getDb(): Promise<Db> {
   if (!g.__lqsSchema || g.__lqsSchemaVersie !== DDL_VERSIE) {
     g.__lqsSchemaVersie = DDL_VERSIE;
     g.__lqsSchema = (g.__lqsDb ??= open()).then(async (db) => {
       for (const stap of DDL) await db.execute(sql.raw(stap));
+      await laadDemoData(db, true).catch((e) => console.error("Demo-data laden mislukt", e));
       return db;
     });
   }

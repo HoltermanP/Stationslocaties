@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { JAARVOLUME, STATION_TYPEN, STATUSSEN } from "@/lib/config";
+import { DEMO_SCENARIOS } from "@/lib/demoScenarios";
 import { dagenTot, datum } from "@/lib/score";
 
 type Rij = {
@@ -38,6 +39,18 @@ export default function Portfolio() {
     }
   };
 
+  // zet de demo's uit demo/demo-data.json.gz terug die niet (meer) in de database staan
+  const demosTerug = async () => {
+    setBezig(true);
+    try {
+      await api("/api/demo", "POST", { terugzetten: true });
+      setRijen(await api<Rij[]>("/api/lqs"));
+    } catch (e) {
+      setFout((e as Error).message);
+    }
+    setBezig(false);
+  };
+
   const alle = rijen ?? [];
   const actief = alle.filter((r) => !r.gearchiveerd);
   const lopend = actief.filter((r) => r.status !== "Opgeleverd");
@@ -66,16 +79,15 @@ export default function Portfolio() {
         </div>
         <div className="flex gap-2">
           <button className="knop licht" onClick={() => (link.open ? setLink({ ...link, open: false }) : linkActie("GET"))}>Meekijklink opdrachtgever</button>
-          <select className="knop licht" disabled={bezig} value="" title="Maakt een volledig doorgerekende voorbeeld-LQS aan" onChange={(e) => { if (e.target.value) demo(e.target.value); }}>
-            <option value="">{bezig ? "Bezig…" : "Demo-LQS aanmaken…"}</option>
-            <option value="zwolle">Zwolle Marslanden – TVS (template)</option>
-            <option value="groningen">Groningen Eemspoort – TVS 20 velden</option>
-            <option value="eindhoven">Eindhoven De Hurk – TVS 23 velden</option>
-            <option value="zwolle-berkum">Zwolle Berkum – TVS (volledig uitgewerkt)</option>
-            <option value="denbosch-vutter">Den Bosch De Vutter – TVS</option>
-            <option value="denbosch-maaspoort">Den Bosch Maaspoort – TVS</option>
-            <option value="denbosch-rosmalen">Rosmalen Kruisstraat – TVS</option>
-            <option value="venlo">Venlo Trade Port – TVRS2</option>
+          <select className="knop licht" disabled={bezig} value="" title="Maakt een volledig doorgerekende voorbeeld-LQS aan, of rekent hem opnieuw door als hij al bestaat"
+            onChange={(e) => { if (e.target.value === "terugzetten") demosTerug(); else if (e.target.value) demo(e.target.value); }}>
+            <option value="">{bezig ? "Bezig…" : "Demo-LQS…"}</option>
+            {(["Enexis", "Liander"] as const).map((nb) => (
+              <optgroup key={nb} label={`Gebied ${nb}`}>
+                {DEMO_SCENARIOS.filter((d) => d.netbeheerder === nb).map((d) => <option key={d.id} value={d.id}>{d.naam.replace("Demo – ", "")} – {STATION_TYPEN.find((t) => t.id === d.stationType)?.naam.match(/TVS, \d+ velden/)?.[0] ?? "TVS"}</option>)}
+              </optgroup>
+            ))}
+            <option value="terugzetten">Meegeleverde demo&apos;s terugzetten</option>
           </select>
           <Link href="/lqs/nieuw" className="knop groen">Nieuwe LQS</Link>
         </div>

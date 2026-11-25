@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "kaartworker": "mkdir -p public/maplibre && cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/maplibre/",
-    "postinstall": "npm run kaartworker"
+    "postinstall": "npm run kaartworker",
+    "demodata": "node scripts/demodata.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

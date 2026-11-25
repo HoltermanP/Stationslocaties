@@ -13,15 +13,30 @@ Zonder configuratie draait de app op een lokale Postgres (PGlite) in `.data/`. Z
 
 ## Demo geven
 
-Dubbelklik op `start-demo.command` in de projectmap. Het script bouwt de app, start hem op http://localhost:3210 en opent de browser; sluit het Terminal-venster om te stoppen. De LQS'en en demo's staan in de map `.data` en blijven bewaard. Tijdens de demo is internet nodig: kaarten, luchtfoto's en de analyse halen hun gegevens live bij PDOK op.
+Dubbelklik op `start-demo.command` in de projectmap. Het script bouwt de app, start hem op http://localhost:3210 en opent de browser; sluit het Terminal-venster om te stoppen. Tijdens de demo is internet nodig: kaarten en luchtfoto's komen live van PDOK.
 
-Op een andere Mac: kopieer de hele projectmap inclusief `.data` (zonder `node_modules` en `.next`), installeer Node.js 20 of hoger en dubbelklik daar op `start-demo.command`.
+**Demo's.** De repository bevat acht uitgewerkte demo-LQS'en in `demo/demo-data.json.gz`. Een lege database wordt er bij de eerste start mee gevuld, dus op een andere laptop is `git clone`, `npm install` en starten genoeg; de map `.data` hoeft niet mee. Ontbreken er demo's, kies dan op de portfoliopagina "Demo-LQS… → Meegeleverde demo's terugzetten".
+
+| Demo | Gebied | Station | Fase |
+| --- | --- | --- | --- |
+| Zwolle Stadshagen | Enexis | TVS 21 velden | Opgeleverd |
+| Assen Kloosterveen | Enexis | TVS 20 velden | Review |
+| Groningen Hoogkerk | Enexis | TVS 23 velden | Rapport |
+| Tilburg Reeshof | Enexis | TVS 21 velden | Opgeleverd |
+| Venlo Blerick | Enexis | TVS 19 velden | Review |
+| Spannenburg | Liander | TVS 20 velden | Rapport |
+| Akkrum | Liander | TVS 21 velden | Review |
+| Wolvega | Liander | TVS 23 velden | Opgeleverd |
+
+Elke demo is een zoekcirkel van 250 m aan de rand van een wijk, dorp of bedrijventerrein, met een aansluitpunt, een door de gemeente aangedragen locatie, gesimuleerde KLIC-leidingen, vijf locaties uit de analyse en een ingevuld dossier van planoloog en reviewer. Echt zijn de analyse op openbare bronnen en de plaatsing van de kavels. Verzonnen zijn de zoekcirkel, het aansluitpunt, de aangedragen locatie, de KLIC-leidingen en alles wat planoloog, AI-voorstel en reviewer invullen (namen, projectnummers, eigendom, scores). De scenario's staan in `src/lib/demoScenarios.ts`.
+
+Een demo opnieuw doorrekenen: kies hem in "Demo-LQS…"; een demo die al bestaat wordt bijgewerkt, niet dubbel aangemaakt. Daarna de meegeleverde data verversen met `npm run demodata` (de app moet draaien) en het bestand committen. De template is van Enexis; de drie demo's in Friesland gebruiken dezelfde template met Liander als netbeheerder in de teksten van de demo.
 
 ## Werkwijze in de app
 
 1. **Opdracht** – zoekgebied tekenen of als GeoJSON (EPSG:4326) laden, type station en kavelmaat, optioneel het aansluitpunt en vooraf aangedragen locaties.
 2. **Analyse** – haalt de kaartlagen op, sluit ongeschikte delen uit (met buffer per laag), past de kavel in en kiest maximaal zes gespreide, kansrijke locaties. Per laag is in te stellen: uitsluiten, aandacht of niet meenemen. Eigen lagen (geodata Enexis, KLIC-levering) zijn als GeoJSON toe te voegen, in RD of WGS84. Een laag met de rol "net van Enexis" bepaalt het criterium nettechniek (afstand tot het net) en levert per locatie de ligging van kabels ten opzichte van de kavel.
-3. **Locaties** – vijf criteria worden automatisch gescoord, vijf door de planoloog (omgevingsplan, eigendom, inpassing, KLIC, procedure). Gewogen totaalscore 0–100, voorkeurslocatie met motivatie. Met "AI-voorstel ophalen" haalt de app per locatie bestemming, dubbelbestemming, kadastraal perceel en grondgebruik op en doet Claude een voorstel per handmatig criterium, met zekerheid en een controlepunt. Zolang de eigendomsinformatie van het Kadaster er niet is, schat het voorstel het soort eigenaar in uit perceelkenmerken (bebouwing en gebruik volgens BAG, vorm, grootte, bestemming, aandeel van de kavel), met lage zekerheid. Per perceel is de eigenaar uit Kadaster-informatie vast te leggen; dan weegt het type eigenaar mee, de naam gaat niet naar het model. Een voorstel telt pas mee nadat de planoloog het overneemt; overgenomen voorstellen zijn in het rapport gemarkeerd.
+3. **Locaties** – tien criteria worden automatisch gescoord, vijf door de planoloog (omgevingsplan, eigendom, inpassing, KLIC, procedure). Gewogen totaalscore 0–100, voorkeurslocatie met motivatie. Met "AI-voorstel ophalen" haalt de app per locatie bestemming, dubbelbestemming, kadastraal perceel en grondgebruik op en doet Claude een voorstel per handmatig criterium, met zekerheid en een controlepunt. Zolang de eigendomsinformatie van het Kadaster er niet is, schat het voorstel het soort eigenaar in uit perceelkenmerken (bebouwing en gebruik volgens BAG, vorm, grootte, bestemming, aandeel van de kavel), met lage zekerheid. Per perceel is de eigenaar uit Kadaster-informatie vast te leggen; dan weegt het type eigenaar mee, de naam gaat niet naar het model. Een voorstel telt pas mee nadat de planoloog het overneemt; overgenomen voorstellen zijn in het rapport gemarkeerd.
 4. **Rapport** – levert het rapport in de standaardtemplate LQS van Enexis (liggend A4): omslag, colofon, inleiding, projectpaspoort, ruimtelijke context met een kaart per thema, kansrijke gebieden, één pagina per locatie (A t/m F), overzicht en advies. De velden per locatie vul je in op de tab Locaties onder "Template Enexis"; wat de app uit analyse en openbare bronnen kan afleiden staat er al (grijs) en is te overschrijven. Het werkrapport in eigen opmaak (scores, lagentabel) blijft beschikbaar als onderbouwing.
 5. **Review** – vier-ogencontrole met vaste controlepunten; pas daarna opleveren.
 
@@ -68,7 +83,8 @@ Het Kadaster werkt niet met een client-secret maar met een ondertekende aanmeldi
 | Natura 2000 | RVO (PDOK WFS) |
 | Rijksmonumenten, archeologie | RCE (WFS) |
 | Bestemming, dubbelbestemming (per locatie) | Ruimtelijke plannen (PDOK WMS); stand van vóór de Omgevingswet |
-| Kadastraal perceel (per locatie) | Kadastrale kaart (PDOK WMS); zonder eigenaar |
+| Kadastraal perceel (per locatie) en perceelgrenzen (plaatsing) | Kadastrale kaart (PDOK WMS en WFS); zonder eigenaar |
+| Begraafplaatsen, sportvelden, volkstuinen | BRT TOP10NL, functioneel gebied (PDOK OGC API) |
 | Gebouwhoogtes (3D-beeld) | 3DBAG (TU Delft, op basis van BAG en AHN); bij uitval BAG met geschatte hoogte |
 | Ondergronden | BRT-achtergrondkaart, luchtfoto, kadastrale kaart, bestemmingen (PDOK) |
 
@@ -81,9 +97,10 @@ Valt een bron uit, dan loopt de analyse door en staat de laag als "niet beschikb
 - Het 3D-model is nagetekend op basis van die maten en de beschrijving van het uiterlijk. Het 3D-beeld heeft twee stijlen: realistisch (three.js op een eigen canvas boven de kaart: materialen met textuur, zonlicht en slagschaduw; `src/lib/realistisch3d.ts`) en schematisch (egale blokken). De zonnestand is gekozen op een leesbaar beeld, niet op datum en tijd. Foto's en tekeningen van Enexis zijn niet overgenomen (alle rechten voorbehouden); de app linkt naar de folders van Enexis.
 - Het rapport volgt de standaardtemplate van Enexis (`src/app/lqs/[id]/sjabloon/`, velden en afleiding in `src/lib/sjabloon.ts`, beeldmateriaal uit de template in `public/sjabloon/`). De keuzelijsten achter "Kies een item." staan niet in de pdf van de template; de lijsten in `sjabloon.ts` zijn aannames en de velden zijn vrij invulbaar. Vervang ze door de lijsten uit het bronbestand van Enexis.
 - Street Smart (Cyclomedia): de koppeling is voorbereid maar niet getest, omdat er nog geen account en API-sleutel is. Zet `STREETSMART_API_KEY` en `STREETSMART_CLIENT_ID` (OAuth, aanbevolen) of `STREETSMART_USERNAME` en `STREETSMART_PASSWORD` in `.env.local`; zie `src/lib/streetsmart.ts`. De knop "Street Smart" bij een locatie opent het panorama en kan het beeld vastleggen als Streetview-foto voor de template. Voor OAuth zijn nog twee terugkeerpagina's nodig (`public/streetsmart/login.html` en `logout.html`) volgens de aanwijzingen van Cyclomedia.
-- KLIC in de demo's is gesimuleerd (`src/lib/klic/simuleer.ts`): leidingen op vaste afstand langs de echte wegen plus één fictieve hogedrukgasleiding. De lagen en het KLIC-paneel vermelden "gesimuleerd".
+- Plaatsing van de locaties (`src/lib/analyse/analyse.ts`). De analyse zoekt plekken zoals een verdeelstation in het MS-net doorgaans staat: bij de bebouwing die het voedt, aan een rijweg, dicht bij de liggende MS-kabels en op een klein stuk grond aan de rand van een perceel (groenstrook, berm, hoek van een terrein). Dat is verwerkt in drie criteria (ligging bij de bebouwde omgeving, afstand tot liggende MS-kabels, ligging aan de rand van het perceel) en in de plaatsing zelf: alleen plekken binnen 50 m van een rijweg (voet- en fietspaden tellen niet), daarna schuift elke locatie binnen 100 m naar de plek met het kortste kabeltracé, dicht bij de MS-kabels, aan de perceelrand, binnen één kadastraal perceel en zonder kabels van derden onder de kavel. Minimaal 5 m tot uitgesloten gebied en 8 m tussen kavel en weg. Midden op een perceel groter dan 2 ha scoort het laagst. Vrije ruimte rond de kavel telt tot 10 m; meer levert geen extra punten op. Begraafplaatsen, sportvelden en volkstuinen zijn uitgesloten. Deze uitgangspunten zijn gangbare praktijk en eigen aannames, geen ontwerpkader van een netbeheerder; de drempels staan in de code en de gewichten in `src/lib/config.ts`. Zonder KLIC of net van de netbeheerder krijgt het MS-criterium een neutrale 3.
+- KLIC in de demo's is gesimuleerd (`src/lib/klic/simuleer.ts`): leidingen op vaste afstand langs de echte wegen, met aansluitleidingen naar de percelen. Middenspanning ligt alleen langs strengen: de kortste routes over de weg van het aansluitpunt naar de randen van het gebied. In een deel van de gebieden kruist een fictieve hogedrukgasleiding de rand van het zoekgebied. De lagen en het KLIC-paneel vermelden "gesimuleerd". De kaart toont KLIC als aparte laag (knop KLIC) met legenda; een klik op een leiding toont beheerder, type, materiaal, diepte en aanlegjaar.
 - Streetview en KLIC per locatie: upload een foto of uitsnede op de tab Locaties. Zonder upload toont de template een luchtfoto van dichtbij en de kadastrale kaart, met de vermelding dat het beeld nog ontbreekt. Met `NEXT_PUBLIC_GOOGLE_MAPS_KEY` in `.env.local` haalt de template de Streetview-foto op via de Street View Static API (niet getest: er was geen sleutel).
-- De demo ("Demo-LQS aanmaken") doorloopt analyse en feiten en vult de template volledig. Eigendom, planregels, stikstofberekening, overstromingsrisico, bermbreedte en inpassing zijn daarin fictieve voorbeeldwaarden.
+- De demo's doorlopen analyse en feiten en vullen de template volledig. Eigendom, planregels, stikstofberekening, overstromingsrisico, bermbreedte, inpassing, review en colofon zijn daarin fictieve voorbeeldwaarden (`src/lib/demoInvulling.ts`, `src/lib/demoUitwerking.ts`). De bestemmingendienst van PDOK valt soms uit; `npm run demodata` weigert daarom demo's te bewaren waarbij een bron ontbrak.
 - De analyse rekent op een raster van 2 tot 15 m in RD. De groene inpasruimte op de kaart is bepaald met een niet-gedraaide kavel; de kavel van elke kandidaat wordt daarna met de lange zijde evenwijdig aan de dichtstbijzijnde rijweg gelegd (voorzijde naar de weg), of in lijn met de bebouwing als er binnen 150 m geen weg is. Past de gedraaide kavel niet, dan schuift hij hooguit 8 m of blijft hij ongedraaid. Afstanden zijn hemelsbreed.
 - Eigenaar en KLIC zijn niet openbaar; het AI-voorstel geeft daar een controle-instructie in plaats van een score. NNN, waterkeringen, buisleidingen en hoogspanning zitten niet in de uitsluitingsanalyse, tenzij als eigen laag geladen.
 - De kengetallen voor het kabeltracé (€ 175, € 125 en € 500 per meter) zijn aannames. Het tracé houdt geen rekening met bestaande kabels en leidingen en is een indicatie voor de onderlinge vergelijking, geen ontwerp.
@@ -95,7 +112,8 @@ Valt een bron uit, dan loopt de analyse door en staat de laag als "niet beschikb
 
 - `src/lib/analyse/` – rastermotor (`raster.ts`), bronnen (`bronnen.ts`), analyse en kandidaatselectie (`analyse.ts`)
 - `src/lib/teksten.ts` – concepttekst voor het rapport
-- `src/lib/db/`, `src/lib/repo.ts` – Drizzle-schema en opslag
+- `src/lib/db/`, `src/lib/repo.ts` – Drizzle-schema en opslag; `db/index.ts` laadt de meegeleverde demo's in een lege database
+- `src/app/api/demo/`, `src/lib/demoScenarios.ts`, `src/lib/demoInvulling.ts`, `src/lib/demoUitwerking.ts`, `scripts/demodata.mjs`, `demo/` – demo's
 - `src/app/api/` – routes; `src/app/lqs/[id]/` – werkplek en rapport
 - `src/lib/analyse/trace.ts` – kabeltracé (goedkoopste route over het raster) en kostenindicatie
 - `src/lib/station3d.ts`, `src/components/Kaart3D.tsx`, `src/app/api/omgeving/` – 3D-model van het station en de omliggende bebouwing

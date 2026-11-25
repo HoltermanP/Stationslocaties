@@ -59,6 +59,12 @@ export async function maak(inv: Partial<Lqs>): Promise<Lqs> {
   return (await haal(rij.id))!;
 }
 
+/** Verwijdert een LQS definitief. Alleen in gebruik voor het opruimen van demo's. */
+export async function verwijder(id: string) {
+  const db = await getDb();
+  await db.delete(T).where(eq(T.id, id));
+}
+
 const VELDEN = [
   "naam", "gemeente", "stationType", "kavelB", "kavelL", "status", "gearchiveerd", "planoloog", "uitvoerder", "startdatum", "deadline",
   "opgeleverdOp", "zoekgebied", "aansluitpunt", "aangedragen", "lagen", "eigenLagen", "gewichten", "analyse", "kandidaten",
