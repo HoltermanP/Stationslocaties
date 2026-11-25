@@ -68,7 +68,7 @@ export async function verwijder(id: string) {
 const VELDEN = [
   "naam", "gemeente", "stationType", "kavelB", "kavelL", "status", "gearchiveerd", "planoloog", "uitvoerder", "startdatum", "deadline",
   "opgeleverdOp", "zoekgebied", "aansluitpunt", "aangedragen", "lagen", "eigenLagen", "gewichten", "analyse", "kandidaten",
-  "voorkeurId", "voorkeurMotivatie", "teksten", "review", "colofon", "beelden", "klic",
+  "voorkeurId", "voorkeurMotivatie", "teksten", "review", "colofon", "beelden", "klic", "historie",
 ] as const;
 
 export async function wijzig(id: string, wijziging: Record<string, unknown>): Promise<Lqs | null> {
@@ -76,7 +76,7 @@ export async function wijzig(id: string, wijziging: Record<string, unknown>): Pr
   const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   for (const v of VELDEN) if (v in wijziging) set[v] = wijziging[v];
   if (set.status === "Opgeleverd" && !("opgeleverdOp" in set)) set.opgeleverdOp = new Date().toISOString().slice(0, 10);
-  if ("status" in set) {
+  if ("status" in set && !("historie" in set)) {
     const huidig = await haal(id);
     if (huidig && huidig.status !== set.status) set.historie = [...(huidig.historie ?? []), { status: set.status, op: new Date().toISOString() }];
   }

@@ -142,6 +142,10 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
 
   // --- afstandskaarten voor scoring ---
   const dBlok = R.afstand(blok);
+  // vrije ruimte rond de kavel telt zonder de weg: een kavel hoort met de voorzijde tegen de weg te liggen
+  const blokZonderWeg = new Uint8Array(n);
+  for (let i = 0; i < n; i++) blokZonderWeg[i] = !gebied[i] || lagen.some((l) => l.soort === "uitsluiten" && l.rol !== "weg" && l.mask[i]) ? 1 : 0;
+  const dObstakel = R.afstand(blokZonderWeg);
   const woningLaag = lagen.find((l) => l.rol === "woningen");
   const wegLaag = lagen.find((l) => l.rol === "weg");
   const dWoning = woningLaag?.status === "ok" ? R.afstand(woningLaag.ruw) : null;
@@ -161,6 +165,7 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   const dMs = msLagen.length ? msLagen[0].d.map((v, i) => Math.min(...msLagen.map((m) => m.d[i]))) : null;
   const klicLagen = leidingLagen.filter((x) => x.l.functie === "leidingen");
   const dLeiding = klicLagen.length ? klicLagen[0].d.map((v, i) => Math.min(...klicLagen.map((m) => m.d[i]))) : null;
+  const leidingMask = klicLagen.length ? klicLagen[0].l.ruw.map((v, i) => (klicLagen.some((m) => m.l.ruw[i]) ? 1 : 0)) : null;
   const pandLaag = lagen.find((l) => l.rol === "bebouwing");
   const dPand = pandLaag?.status === "ok" ? R.afstand(pandLaag.ruw) : null;
   // kadastrale percelen: nummer per cel, oppervlakte per perceel en de afstand tot de dichtstbijzijnde perceelgrens
@@ -220,9 +225,17 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     veld = kostenveld(R, klasse, doelen);
   }
 
-  const beoordeel = (x: number, y: number) => {
+  // Ligt een cel onder de kavel? Met de vorm van de gerichte kavel exact; zonder vorm (bij het zoeken) het omhullende vierkant.
+  type Vorm = { t: [number, number]; n: [number, number]; langs: number; diep: number };
+  const onder = (x: number, y: number, vorm?: Vorm) => (cc: number, rr: number) => {
+    if (!vorm) return true;
+    const dx = R.x(cc) - x, dy = R.y(rr) - y;
+    return Math.abs(dx * vorm.t[0] + dy * vorm.t[1]) <= vorm.langs / 2 && Math.abs(dx * vorm.n[0] + dy * vorm.n[1]) <= vorm.diep / 2;
+  };
+  const beoordeel = (x: number, y: number, vorm?: Vorm) => {
+    const inKavel = onder(x, y, vorm);
     const c = Math.min(w - 1, Math.max(0, R.kol(x))), r = Math.min(h - 1, Math.max(0, R.rij(y))), i = r * w + c;
-    const ruimte = Math.max(0, dBlok[i] - Math.min(lqs.kavelB, lqs.kavelL) / 2);
+    const ruimte = Math.max(0, dObstakel[i] - Math.min(lqs.kavelB, lqs.kavelL) / 2);
     const dn = Math.hypot(x - net[0], y - net[1]);
     // zonder aangewezen aansluitpunt geldt de afstand tot het aangeleverde net
     const dNet = !lqs.aansluitpunt && netLagen.length ? Math.min(...netLagen.map((nl) => nl.d[i])) : null;
@@ -231,13 +244,13 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
       if (l.soort !== "aandacht") continue;
       let raak = false;
       for (let rr = Math.max(0, r - hL); rr <= Math.min(h - 1, r + hL) && !raak; rr++)
-        for (let cc = Math.max(0, c - hL); cc <= Math.min(w - 1, c + hL); cc++) if (l.mask[rr * w + cc]) { raak = true; break; }
+        for (let cc = Math.max(0, c - hL); cc <= Math.min(w - 1, c + hL); cc++) if (l.mask[rr * w + cc] && inKavel(cc, rr)) { raak = true; break; }
       if (raak) geraakt.push(l.naam);
     }
     const tr = veld && isFinite(veld.kost[i]) ? veld.meters[i] : null;
     const auto: Record<string, AutoScore> = {
       // genoeg is genoeg: een station heeft werkruimte nodig, geen open veld eromheen
-      ruimte: { waarde: rond(ruimte), score: trap(ruimte, [1, 3, 6, 10], true), toelichting: `${rond(ruimte)} m vrije ruimte rondom de kavel` },
+      ruimte: { waarde: rond(ruimte), score: trap(ruimte, [1, 3, 6, 10], true), toelichting: `${rond(ruimte)} m vrije ruimte rondom de kavel (de weg niet meegeteld)` },
       woningen: dWoning
         ? { waarde: rond(dWoning[i]), score: trap(dWoning[i], [15, 30, 60, 120], true), toelichting: dWoning[i] > 1e5 ? "geen woningen in de omgeving" : `${rond(dWoning[i])} m tot dichtstbijzijnde woning` }
         : { waarde: null, score: 3, toelichting: "woningdata niet beschikbaar – handmatig controleren" },
@@ -286,12 +299,13 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     };
     return { ...t, lijn: t.lijn.map(naarWGS) as LngLat[], doel: traceDoel, hemelsbreed: b.hemelsbreed };
   };
-  const leidingenBij = (x: number, y: number) => {
+  const leidingenBij = (x: number, y: number, vorm?: Vorm) => {
+    const binnen = onder(x, y, vorm);
     const c = Math.min(w - 1, Math.max(0, R.kol(x))), r = Math.min(h - 1, Math.max(0, R.rij(y)));
     return leidingLagen.map(({ l, d }) => {
       let inKavel = false;
       for (let rr = Math.max(0, r - hL); rr <= Math.min(h - 1, r + hL) && !inKavel; rr++)
-        for (let cc = Math.max(0, c - hL); cc <= Math.min(w - 1, c + hL); cc++) if (l.ruw[rr * w + cc]) { inKavel = true; break; }
+        for (let cc = Math.max(0, c - hL); cc <= Math.min(w - 1, c + hL); cc++) if (l.ruw[rr * w + cc] && binnen(cc, rr)) { inKavel = true; break; }
       return { laag: l.naam, afstand: rond(d[r * w + c]), inKavel };
     });
   };
@@ -327,6 +341,8 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
   // --- kavel richten: lange zijde evenwijdig aan de dichtstbijzijnde rijweg (programma van eisen Enexis), voorzijde naar de weg.
   // Zonder weg binnen 150 m volgt de kavel de richting van het dichtstbijzijnde gebouw; anders ligt hij noord-zuid. ---
   type Vec = [number, number];
+  const WEGAFSTAND = 6; // m van de hartlijn van de weg tot de voorzijde van de kavel
+  const KLIC_MARGE = 2; // m tussen de kavel en kabels of leidingen van derden
   const gevels = (await panden(bbox).catch(() => [])).flatMap((f) => {
     const g = f.geometry;
     return g?.type === "Polygon" ? [(g.coordinates as number[][][])[0]] : g?.type === "MultiPolygon" ? (g.coordinates as number[][][][]).map((q) => q[0]) : [];
@@ -368,23 +384,62 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     return true;
   };
   /** Legt de kavel gericht neer; schuift hooguit 8 m als de gedraaide kavel anders net iets uitgeslotens raakt. */
-  const plaats = (x: number, y: number, moetVrij: boolean): { x: number; y: number; hoeken: number[][]; ligging: string } => {
+  const plaats = (x: number, y: number, moetVrij: boolean): { x: number; y: number; hoeken: number[][]; ligging: string; vorm: Vorm } => {
     const { t, n, naar } = richting(x, y);
     const L = Math.max(lqs.kavelB, lqs.kavelL), B = Math.min(lqs.kavelB, lqs.kavelL);
     const opties: { t: Vec; n: Vec; langs: number; diep: number; tekst: string }[] = [
       { t, n, langs: L, diep: B, tekst: `lange zijde ${naar}` },
       { t, n, langs: B, diep: L, tekst: `korte zijde ${naar.replace("evenwijdig aan", "aan")}` },
     ];
-    if (!moetVrij) return { x, y, hoeken: rechthoek(x, y, t, n, L, B), ligging: opties[0].tekst };
+    if (!moetVrij) return { x, y, hoeken: rechthoek(x, y, t, n, L, B), ligging: opties[0].tekst, vorm: { t, n, langs: L, diep: B } };
+    // Efficiënte plek: de kavel schuift van de weg af gekeken zo ver naar de weg toe als kan. De voorzijde ligt dan aan de berm, zonder
+    // ongebruikt terrein tussen weg en station en met het kortste kabeltracé. Hij stopt bij het eerste uitgesloten gebied, op
+    // WEGAFSTAND vanaf de hartlijn van de weg (halve rijbaan plus berm), zodra er kabels of leidingen van derden onder de kavel
+    // komen te liggen (KLIC) en zodra de kavel een extra kadastraal perceel raakt. Alleen als de kavel naar een weg is gericht.
+    const onderKavel = (px: number, py: number, o: { t: Vec; n: Vec; langs: number; diep: number }) => {
+      const straal = Math.hypot(o.langs, o.diep) / 2 + KLIC_MARGE, percelen = new Set<number>();
+      let leiding = false;
+      for (let r = Math.max(0, R.rij(py + straal)); r <= Math.min(h - 1, R.rij(py - straal)); r++)
+        for (let c = Math.max(0, R.kol(px - straal)); c <= Math.min(w - 1, R.kol(px + straal)); c++) {
+          const dx = R.x(c) - px, dy = R.y(r) - py, i = r * w + c;
+          const a = Math.abs(dx * o.t[0] + dy * o.t[1]) - o.langs / 2, b = Math.abs(dx * o.n[0] + dy * o.n[1]) - o.diep / 2;
+          if (a <= KLIC_MARGE && b <= KLIC_MARGE && leidingMask?.[i]) leiding = true; // kabels van derden blijven 2 m buiten de kavel
+          if (a <= 0 && b <= 0 && perceelId[i]) percelen.add(perceelId[i]);
+        }
+      return { leiding, percelen: percelen.size };
+    };
+    const naarWeg = naar.includes("de weg");
+    const wegAfstand = (px: number, py: number, o: { t: Vec; n: Vec; langs: number; diep: number }) => {
+      const vx = px - (o.diep / 2) * o.n[0], vy = py - (o.diep / 2) * o.n[1];
+      return Math.min(...[-1, 0, 1].map((k) => dichtstbij(wegen, vx + (k * o.langs * o.t[0]) / 2, vy + (k * o.langs * o.t[1]) / 2)?.d ?? Infinity));
+    };
+    const tegenWeg = (px: number, py: number, o: { t: Vec; n: Vec; langs: number; diep: number }) => {
+      if (!naarWeg) return { x: px, y: py };
+      let bx = px, by = py;
+      const begin = onderKavel(px, py, o);
+      for (let s = 1; s <= 150; s++) {
+        const cx = px - s * o.n[0], cy = py - s * o.n[1];
+        if (!isVrij(cx, cy, o.t, o.n, o.langs, o.diep) || wegAfstand(cx, cy, o) < WEGAFSTAND) break;
+        const nu = onderKavel(cx, cy, o);
+        if (nu.leiding || nu.percelen > begin.percelen) break;
+        // ook de flanken en de achterzijde blijven van de rijbaan af (hoekkavel)
+        if (dRij && rechthoek(cx, cy, o.t, o.n, o.langs, o.diep).some(([hx, hy]) => dRij[Math.min(h - 1, Math.max(0, R.rij(hy))) * w + Math.min(w - 1, Math.max(0, R.kol(hx)))] < WEGAFSTAND)) break;
+        bx = cx; by = cy;
+      }
+      return { x: bx, y: by };
+    };
     for (const o of opties)
       for (let straal = 0; straal <= 8; straal += 2)
         for (let hoek = 0; hoek < (straal ? 8 : 1); hoek++) {
           const px = x + straal * Math.cos((hoek * Math.PI) / 4), py = y + straal * Math.sin((hoek * Math.PI) / 4);
-          if (isVrij(px, py, o.t, o.n, o.langs, o.diep)) return { x: px, y: py, hoeken: rechthoek(px, py, o.t, o.n, o.langs, o.diep), ligging: o.tekst };
+          if (isVrij(px, py, o.t, o.n, o.langs, o.diep)) {
+            const m = tegenWeg(px, py, o);
+            return { x: m.x, y: m.y, hoeken: rechthoek(m.x, m.y, o.t, o.n, o.langs, o.diep), ligging: o.tekst, vorm: { t: o.t, n: o.n, langs: o.langs, diep: o.diep } };
+          }
         }
     // gedraaid past het niet: de kavel blijft liggen zoals hij in het raster is ingepast
     const lOW = inpas[Math.min(h - 1, Math.max(0, R.rij(y))) * w + Math.min(w - 1, Math.max(0, R.kol(x)))] === 2;
-    return { x, y, hoeken: rechthoek(x, y, [1, 0], [0, 1], lOW ? lqs.kavelL : lqs.kavelB, lOW ? lqs.kavelB : lqs.kavelL), ligging: "niet gedraaid: evenwijdig aan de weg past de kavel hier niet" };
+    return { x, y, hoeken: rechthoek(x, y, [1, 0], [0, 1], lOW ? lqs.kavelL : lqs.kavelB, lOW ? lqs.kavelB : lqs.kavelL), ligging: "niet gedraaid: evenwijdig aan de weg past de kavel hier niet", vorm: { t: [1, 0], n: [0, 1], langs: lOW ? lqs.kavelL : lqs.kavelB, diep: lOW ? lqs.kavelB : lqs.kavelL } };
   };
   const kavelVan = (hoeken: number[][]) => ({ type: "Polygon" as const, coordinates: [[...hoeken, hoeken[0]].map(naarWGS)] });
   // --- op een groot terrein niet midden op het perceel, maar aan de rand bij de weg en het kabeltracé ---
@@ -455,24 +510,25 @@ export async function voerAnalyseUit(lqs: Lqs): Promise<{ analyse: Analyse; kand
     const pl = plaats(g0.x, g0.y, true);
     const g = { x: pl.x, y: pl.y };
     const punt = naarWGS([g.x, g.y]);
-    const b = beoordeel(g.x, g.y);
+    const b = beoordeel(g.x, g.y, pl.vorm);
     const trace = traceBij(g.x, g.y, b);
     const vorig = hergebruik(punt, "analyse");
     kandidaten.push({
       id: vorig?.id ?? randomUUID(), naam: `Locatie ${String.fromCharCode(65 + idx)}`, bron: "analyse", punt, rd: [rond(g.x), rond(g.y)],
       kavel: kavelVan(pl.hoeken), ligging: pl.ligging,
-      inUitgesloten: [], auto: b.auto, leidingen: leidingenBij(g.x, g.y), handmatig: vorig?.handmatig ?? leegHand(), feiten: vorig?.feiten, voorstel: vorig?.voorstel, eigendom: vorig?.eigendom,
+      inUitgesloten: [], auto: b.auto, leidingen: leidingenBij(g.x, g.y, pl.vorm), handmatig: vorig?.handmatig ?? leegHand(), feiten: vorig?.feiten, voorstel: vorig?.voorstel, eigendom: vorig?.eigendom,
       trace, beeld: vorig?.beeld,
     });
   });
   for (const a of lqs.aangedragen) {
     const [x, y] = naarRD(a.punt);
-    const b = beoordeel(x, y);
+    const pl = plaats(x, y, false);
+    const b = beoordeel(x, y, pl.vorm);
     const trace = traceBij(x, y, b);
     const vorig = hergebruik(a.punt, "aangedragen", a.naam);
     kandidaten.push({
       id: vorig?.id ?? randomUUID(), naam: a.naam, bron: "aangedragen", punt: a.punt, rd: [rond(x), rond(y)],
-      kavel: kavelVan(plaats(x, y, false).hoeken), ligging: plaats(x, y, false).ligging, inUitgesloten: b.inUit, auto: b.auto, leidingen: leidingenBij(x, y), handmatig: vorig?.handmatig ?? leegHand(), feiten: vorig?.feiten, voorstel: vorig?.voorstel, eigendom: vorig?.eigendom,
+      kavel: kavelVan(pl.hoeken), ligging: pl.ligging, inUitgesloten: b.inUit, auto: b.auto, leidingen: leidingenBij(x, y, pl.vorm), handmatig: vorig?.handmatig ?? leegHand(), feiten: vorig?.feiten, voorstel: vorig?.voorstel, eigendom: vorig?.eigendom,
       trace, beeld: vorig?.beeld,
     });
   }

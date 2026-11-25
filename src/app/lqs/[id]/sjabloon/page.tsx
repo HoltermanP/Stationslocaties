@@ -73,17 +73,18 @@ export default function SjabloonRapport() {
   const gkey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
 
   // --- kaarten voor het hoofdstuk Ruimtelijke context ---
+  const locatieLegenda = [{ naam: "Onderzochte locatie", kleur: "#E5007D" }, ...(voorkeur ? [{ naam: "★ Voorkeurslocatie", kleur: "#00A651" }] : [])];
   const laagNaam = (lid: string) => { const x = a?.lagen.find((y) => y.id === lid); return x ? { naam: `${x.naam}${x.buffer ? ` (buffer ${x.buffer} m)` : ""}${x.soort === "aandacht" ? ", aandacht" : ""}: ${x.pct.toFixed(1)}%`, kleur: x.kleur } : null; };
   type KaartDef = { titel: string; legenda: { naam: string; kleur: string }[]; plaat: (w: number, h: number) => ReactNode };
   const kaarten: KaartDef[] = [];
   if (gebied && l.zoekgebied) {
-    const basis = { bbox: gebied, zoekgebied: l.zoekgebied, aansluitpunt: l.aansluitpunt };
-    kaarten.push({ titel: "Zoekgebied op de luchtfoto", legenda: [{ naam: "Zoekgebied", kleur: "#E5007D" }], plaat: (w, h) => <Plaat w={w} h={h} basis="lucht" {...basis} /> });
-    kaarten.push({ titel: "Regels op de kaart: enkelbestemmingen (Ruimtelijke plannen, stand vóór de Omgevingswet)", legenda: [{ naam: "Zoekgebied", kleur: "#E5007D" }], plaat: (w, h) => <Plaat w={w} h={h} rustig lagen={[{ id: "plu", dekking: 0.65 }]} {...basis} /> });
+    const basis = { bbox: gebied, zoekgebied: l.zoekgebied, aansluitpunt: l.aansluitpunt, kandidaten: ks, labels, voorkeurId: l.voorkeurId };
+    kaarten.push({ titel: "Zoekgebied op de luchtfoto", legenda: [{ naam: "Zoekgebied", kleur: "#E5007D" }, ...locatieLegenda], plaat: (w, h) => <Plaat w={w} h={h} basis="lucht" {...basis} /> });
+    kaarten.push({ titel: "Regels op de kaart: enkelbestemmingen (Ruimtelijke plannen, stand vóór de Omgevingswet)", legenda: [{ naam: "Zoekgebied", kleur: "#E5007D" }, ...locatieLegenda], plaat: (w, h) => <Plaat w={w} h={h} rustig lagen={[{ id: "plu", dekking: 0.65 }]} {...basis} /> });
     if (a) {
       const themas = a.themas?.length ? a.themas : [{ naam: "Belemmeringen (alle thema's)", overlay: a.overlay, lagen: a.lagen.filter((x) => x.soort !== "uit").map((x) => x.id) }];
       for (const t of themas)
-        kaarten.push({ titel: `Thema ${t.naam.toLowerCase()}`, legenda: t.lagen.map(laagNaam).filter((x) => !!x), plaat: (w, h) => <Plaat w={w} h={h} rustig overlay={{ src: t.overlay, hoeken: a.hoeken }} {...basis} /> });
+        kaarten.push({ titel: `Thema ${t.naam.toLowerCase()}`, legenda: [...t.lagen.map(laagNaam).filter((x) => !!x), ...locatieLegenda], plaat: (w, h) => <Plaat w={w} h={h} rustig overlay={{ src: t.overlay, hoeken: a.hoeken }} {...basis} /> });
     }
   }
 
@@ -195,7 +196,7 @@ export default function SjabloonRapport() {
           {stap(4, "Afwegen per gebied", "Per kansrijk gebied worden relevante kaartregels en omgevingsfactoren, waaronder ecologie, archeologie en landschappelijke inpassing, onderzocht. Hiermee worden aandachtspunten en beleidskaders vastgesteld.")}
           {stap(5, "Advies", "In overleg met het Enexis-projectteam en bevoegd gezag, wordt een definitieve keuze voor de voorkeurslocatie bepaald.")}
           <div style={{ ...pp.kop, margin: "26px 0 4px" }}>Zoekgebied</div>
-          <div style={{ border: "2px solid #000", width: 334 }}>{gebied ? <Plaat w={330} h={236} bbox={gebied} zoekgebied={l.zoekgebied} aansluitpunt={l.aansluitpunt} /> : <div style={{ height: 236, background: "#fff" }} />}</div>
+          <div style={{ border: "2px solid #000", width: 334 }}>{gebied ? <Plaat w={330} h={236} bbox={gebied} zoekgebied={l.zoekgebied} aansluitpunt={l.aansluitpunt} kandidaten={ks} labels={labels} voorkeurId={l.voorkeurId} /> : <div style={{ height: 236, background: "#fff" }} />}</div>
         </div>
         <div>
           <div style={pp.kop}>Aanleiding</div>
@@ -225,7 +226,7 @@ export default function SjabloonRapport() {
   if (gebied && a)
     bladen.push({ kop: "Kansrijke gebieden", el: kaartBlad({
       titel: `kansrijke gebieden en onderzochte locaties. ${getal(Math.round((100 * a.uitgeslotenM2) / a.oppZoekgebiedM2))}% van het zoekgebied is uitgesloten; op ${(a.inpasbaarM2 / 10000).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} ha past het perceel van ${komma(l.kavelL)} × ${komma(l.kavelB)} m`,
-      legenda: [{ naam: "Perceel inpasbaar", kleur: "#22c55e" }, { naam: "Onderzochte locatie", kleur: "#E5007D" }, ...(voorkeur ? [{ naam: "Voorkeurslocatie", kleur: "#00A651" }] : []), ...(ks.some((k) => k.trace) ? [{ naam: "Kabeltracé (indicatief)", kleur: "#7c3aed" }] : [])],
+      legenda: [{ naam: "Perceel inpasbaar", kleur: "#22c55e" }, { naam: "Onderzochte locatie", kleur: "#E5007D" }, { naam: "Afgevallen locatie", kleur: "#b91c1c" }, ...(voorkeur ? [{ naam: "★ Voorkeurslocatie", kleur: "#00A651" }] : []), ...(ks.some((k) => k.trace) ? [{ naam: "Kabeltracé (indicatief)", kleur: "#7c3aed" }] : [])],
       plaat: (w, h) => <Plaat w={w} h={h} bbox={gebied} rustig overlay={{ src: a.overlay, hoeken: a.hoeken }} zoekgebied={l.zoekgebied} kandidaten={ks} labels={labels} voorkeurId={l.voorkeurId} aansluitpunt={l.aansluitpunt} traces />,
     }, "Kansrijke gebieden", "Kaart") });
 
@@ -266,11 +267,11 @@ export default function SjabloonRapport() {
             </div>
           </div>
           <div style={{ marginTop: -62 }}>
-            {beeld("Indicatieve locatie", <Plaat w={300} h={200} basis="lucht" bbox={rondom(k.punt, 85)} kandidaten={[k]} />)}
+            {beeld("Indicatieve locatie", <Plaat w={300} h={200} basis="lucht" bbox={rondom(k.punt, 85)} kandidaten={ks} labels={labels} voorkeurId={l.voorkeurId} />)}
             {sv ? beeld("Streetview", foto(sv))
               : gkey ? beeld("Streetview", foto(`https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${k.punt[1]},${k.punt[0]}&fov=90&source=outdoor&key=${gkey}`))
-              : beeld("Streetview", <Plaat w={300} h={200} basis="lucht" bbox={rondom(k.punt, 32)} kandidaten={[k]} />, "foto nog toevoegen; luchtfoto van dichtbij")}
-            {klic ? beeld("KLIC", foto(klic)) : beeld("KLIC", <Plaat w={300} h={200} basis="geen" lagen={[{ id: "kadaster" }]} bbox={rondom(k.punt, 60)} kandidaten={[k]} />, "KLIC-uitsnede nog toevoegen; kadastrale kaart")}
+              : beeld("Streetview", <Plaat w={300} h={200} basis="lucht" bbox={rondom(k.punt, 32)} kandidaten={ks} labels={labels} voorkeurId={l.voorkeurId} />, "foto nog toevoegen; luchtfoto van dichtbij")}
+            {klic ? beeld("KLIC", foto(klic)) : beeld("KLIC", <Plaat w={300} h={200} basis="geen" lagen={[{ id: "kadaster" }]} bbox={rondom(k.punt, 60)} kandidaten={ks} labels={labels} voorkeurId={l.voorkeurId} />, "KLIC-uitsnede nog toevoegen; kadastrale kaart")}
           </div>
         </div>
       </>
@@ -311,7 +312,7 @@ export default function SjabloonRapport() {
       </div>
       {voorkeur && (
         <div style={{ width: 400, paddingTop: 46 }}>
-          <div style={{ border: "1px solid #a6a6a6", height: 262 }}><Plaat w={398} h={260} basis="lucht" bbox={rondom(voorkeur.punt, 70)} kandidaten={[voorkeur]} voorkeurId={voorkeur.id} traces /></div>
+          <div style={{ border: "1px solid #a6a6a6", height: 262 }}><Plaat w={398} h={260} basis="lucht" bbox={rondom(voorkeur.punt, 70)} kandidaten={ks} labels={labels} voorkeurId={voorkeur.id} traces /></div>
           <div className="bij">Voorkeurslocatie {labels[voorkeur.id]}{voorkeur.adres && `, ${voorkeur.adres}`}</div>
           <div style={{ border: "1px solid #a6a6a6", height: 240, marginTop: 10 }}><Kaart3D statisch kandidaat={voorkeur} stationType={l.stationType} /></div>
           <div className="bij">3D-beeld van het station op schaal; gevels en beplanting zijn indicatief</div>

@@ -141,13 +141,13 @@ export default function Kaart(p: Props) {
           { id: "plu", type: "raster", source: "plu", layout: { visibility: "none" }, paint: { "raster-opacity": 0.6 } },
           { id: "kadaster", type: "raster", source: "kadaster", layout: { visibility: "none" } },
           { id: "gebouwen3d", type: "fill-extrusion", source: "gebouwen", layout: { visibility: "none" }, paint: { "fill-extrusion-color": ["case", ["==", ["get", "geschat"], true], "#f0e2bd", "#dedbd5"], "fill-extrusion-height": ["get", "h"], "fill-extrusion-opacity": 0.93, "fill-extrusion-vertical-gradient": true } },
-          { id: "gebied", type: "line", source: "gebied", paint: { "line-color": "#0f172a", "line-width": 2.5, "line-dasharray": [3, 2] } },
+          { id: "gebied", type: "line", source: "gebied", paint: { "line-color": "#0a3b3f", "line-width": 2.5, "line-dasharray": [3, 2] } },
           { id: "traces-rand", type: "line", source: "traces", paint: { "line-color": "#ffffff", "line-width": ["case", ["get", "voorkeur"], 6, 4], "line-opacity": 0.8 } },
           { id: "traces", type: "line", source: "traces", paint: { "line-color": ["case", ["get", "voorkeur"], "#d97706", "#f59e0b"], "line-width": ["case", ["get", "voorkeur"], 3.5, 2], "line-dasharray": [2, 1.5] } },
           { id: "klic-rand", type: "line", source: "klic", layout: { visibility: "none", "line-cap": "round" }, paint: { "line-color": "#ffffff", "line-width": ["case", ["==", ["get", "aard"], "aansluiting"], 3, 5], "line-opacity": 0.7 } },
           { id: "klic", type: "line", source: "klic", layout: { visibility: "none", "line-cap": "round" }, paint: { "line-color": ["match", ["get", "thema"], ...Object.entries(KLIC_KLEUR).flat(), "#64748b"] as never, "line-width": ["case", ["==", ["get", "aard"], "aansluiting"], 1.2, 2.4] } },
-          { id: "kavels-vlak", type: "fill", source: "kavels", paint: { "fill-color": ["case", ["get", "voorkeur"], "#059669", "#0f172a"], "fill-opacity": 0.35 } },
-          { id: "kavels-lijn", type: "line", source: "kavels", paint: { "line-color": ["case", ["get", "voorkeur"], "#047857", "#0f172a"], "line-width": 2 } },
+          { id: "kavels-vlak", type: "fill", source: "kavels", paint: { "fill-color": ["case", ["get", "voorkeur"], "#08774a", "#0a3b3f"], "fill-opacity": 0.35 } },
+          { id: "kavels-lijn", type: "line", source: "kavels", paint: { "line-color": ["case", ["get", "voorkeur"], "#08774a", "#0a3b3f"], "line-width": 2 } },
           { id: "schets-lijn", type: "line", source: "schets", paint: { "line-color": "#dc2626", "line-width": 2 } },
           { id: "schets-punt", type: "circle", source: "schets", filter: ["==", "$type", "Point"], paint: { "circle-radius": 4, "circle-color": "#dc2626" } },
         ],
@@ -313,7 +313,8 @@ export default function Kaart(p: Props) {
     );
     ks.forEach((k) => {
       const kort = k.bron === "analyse" ? k.naam.replace("Locatie ", "") : "★";
-      zet(k.punt, kort, k.id === p.voorkeurId ? "voorkeur" : k.inUitgesloten.length ? "afgevallen" : "", k.naam, () => actueel.current.onKandidaat?.(k.id));
+      const tekst = k.id === p.voorkeurId ? `★ ${kort === "★" ? "Voorkeur" : kort}` : kort;
+      zet(k.punt, tekst, k.id === p.voorkeurId ? "voorkeur" : k.inUitgesloten.length ? "afgevallen" : "", k.naam, () => actueel.current.onKandidaat?.(k.id));
     });
     // aangedragen locaties die nog niet door de analyse zijn beoordeeld
     (p.aangedragen ?? []).filter((a) => !ks.some((k) => k.bron === "aangedragen" && k.naam === a.naam)).forEach((a) => zet(a.punt, "★", "nieuw", `${a.naam} (nog niet geanalyseerd)`));

@@ -134,6 +134,6 @@ export function sjabloonVan(l: Lqs, k: Kandidaat) {
   return { veld, oordeel, automatisch };
 }
 
-const ALLE = ["gebruik", "bouwen", "grondeigendom", "grondgebruik", "stikstof1", "stikstof2", "overstroming", "regels", ...FACTOREN.map((x) => x.id), ...TECHNIEK.map((x) => x.id), "inpassing"];
+export const ALLE = ["gebruik", "bouwen", "grondeigendom", "grondgebruik", "stikstof1", "stikstof2", "overstroming", "regels", ...FACTOREN.map((x) => x.id), ...TECHNIEK.map((x) => x.id), "inpassing"];
 /** Velden die nog leeg zijn, voor de voortgang per locatie. */
 export const openVelden = (l: Lqs, k: Kandidaat) => { const s = sjabloonVan(l, k); return ALLE.filter((id) => !s.veld(id)); };

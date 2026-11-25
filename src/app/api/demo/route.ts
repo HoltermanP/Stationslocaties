@@ -7,7 +7,7 @@ import { werkDemoUit } from "@/lib/demoUitwerking";
 import { simuleerKlic } from "@/lib/klic/simuleer";
 import { haal, lijst, maak, verwijder, wijzig } from "@/lib/repo";
 import { rangorde } from "@/lib/score";
-import { sjabloonVan } from "@/lib/sjabloon";
+import { ALLE, sjabloonVan } from "@/lib/sjabloon";
 import { maakTeksten } from "@/lib/teksten";
 import type { Kandidaat, Oordeel } from "@/lib/types";
 
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   try {
     // gesimuleerde KLIC-leidingen langs de wegen, tenzij er al een echte levering is ingelezen
     if (!l.klic?.ingelezenOp || l.klic.bron === "simulatie") {
-      const sim = await simuleerKlic(l, sc.beheer).catch((e) => { console.error("Demo: KLIC-simulatie mislukt", e); return null; });
+      const sim = await simuleerKlic(l, sc.klic).catch((e) => { console.error("Demo: KLIC-simulatie mislukt", e); return null; });
       if (sim) l = (await wijzig(l.id, sim)) ?? l;
     }
     const { analyse, kandidaten: ruw } = await voerAnalyseUit(l);
@@ -80,10 +80,23 @@ export async function POST(req: Request) {
     kandidaten.forEach((k) => {
       k.sjabloon!.velden.notities = `${sjabloonVan({ ...l, analyse, kandidaten, voorkeurId }, k).veld("notities")} Demo: eigendom, planregels, stikstof, overstromingsrisico, bermbreedte, inpassing, de handmatige scores en het AI-voorstel zijn fictief ingevuld; de KLIC-leidingen zijn gesimuleerd.`;
     });
+    // Alle velden van de template vastleggen, ook die de app zelf afleidt, zodat er voor de planoloog niets openstaat.
+    const tussen = { ...l, analyse, kandidaten, voorkeurId, voorkeurMotivatie };
+    kandidaten.forEach((k) => {
+      const sj = sjabloonVan(tussen, k);
+      for (const id of ALLE) {
+        k.sjabloon!.velden[id] ||= sj.veld(id) || AANVULLING[id] || "Beoordeeld voor de demo";
+        k.sjabloon!.oordelen[id] ??= sj.oordeel(id);
+      }
+    });
+    // doorlooptijd per fase: de statuswijzigingen krijgen een datum die bij de startdatum past
+    const stappen: [string, number][] = [["Intake", 0], ["Analyse", 1], ["Kandidaten", 4], ["Rapport", 9], ["Review", 14], ["Opgeleverd", 17]];
+    const historie = stappen.slice(0, stappen.findIndex(([s]) => s === sc.fase) + 1)
+      .map(([status, d]) => ({ status, op: new Date(Math.min(nu, nu - sc.gestart * DAG + d * DAG + 9 * 3600000)).toISOString() }));
     const teksten = maakTeksten({ ...l, analyse, kandidaten, voorkeurId, voorkeurMotivatie });
     teksten.aanleiding += ` Dit is een demo in het gebied van ${sc.netbeheerder}: de zoekcirkel is fictief, de velden van de planoloog en het AI-voorstel bevatten voorbeeldwaarden en de KLIC-gegevens zijn gesimuleerd.`;
     return Response.json(await wijzig(l.id, {
-      analyse, kandidaten, voorkeurId, voorkeurMotivatie, teksten, status: sc.fase, review: uitwerking.review, colofon: uitwerking.colofon,
+      analyse, kandidaten, voorkeurId, voorkeurMotivatie, teksten, status: sc.fase, historie, review: uitwerking.review, colofon: uitwerking.colofon,
       opgeleverdOp: sc.fase === "Opgeleverd" ? dag(nu - sc.gestart * DAG + 17 * DAG) : null,
     }));
   } catch (e) {
@@ -92,6 +105,22 @@ export async function POST(req: Request) {
     return Response.json(l);
   }
 }
+
+/** Terugval voor template-velden die noch de planoloog noch de afleiding uit de analyse invult. */
+const AANVULLING: Record<string, string> = {
+  stikstof1: "Geen Natura 2000 binnen 10 km",
+  geluid: "Geen geluidgevoelige objecten nabij",
+  ondergrond: "Geen aangeleverde kabels of leidingen binnen de kavel",
+  bereikbaarheid: "Bereikbaar via de openbare weg met zwaar materieel",
+  barrieres: "Geen fysieke barrières op het kabeltracé",
+  verharding: "Kabeltracé grotendeels in bermen en onverharde stroken",
+  waterschap: "Geen vergunning nodig",
+  archeologie: "Geen onderzoeksplicht",
+  ecologie: "Geen beschermd gebied geraakt",
+  grondeigendom: "Gemeente",
+  grondgebruik: "Groenvoorziening",
+  regels: "Bestemming nagezocht in het Omgevingsloket",
+};
 
 const past = (k: Kandidaat) => /bedrijf|bedrijven|industrie|verkeer|maatschappelijk/.test(bestemmingTekst(k)) && !/natuur/.test(bestemmingTekst(k));
 

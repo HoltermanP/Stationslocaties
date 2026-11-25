@@ -1,53 +1,93 @@
 @import "tailwindcss";
 
+/* Huisstijl VECTOR Engineering (vector-engineering.nl): diep petrol, amber accent, teal/groen */
+:root {
+  --ink: #0d1c1b;
+  --navy: #0a3b3f;
+  --navy-deep: #052326;
+  --amber: #f5a623;
+  --teal: #0bbcae;
+  --gradient-vector: linear-gradient(90deg, #f5a623 0%, #7ccf4a 45%, #0bbcae 100%);
+}
+
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+  --font-head: var(--font-space);
+}
+
+@theme {
+  --color-slate-50: #f4f9f6;
+  --color-slate-100: #eef6f0;
+  --color-slate-200: #d9e8e1;
+  --color-slate-300: #c3d6cd;
+  --color-slate-400: #8fa6a1;
+  --color-slate-500: #5f7874;
+  --color-slate-600: #4f625d;
+  --color-slate-700: #2f4642;
+  --color-slate-800: #17302e;
+  --color-slate-900: #0a3b3f;
+  --color-slate-950: #052326;
+  --color-emerald-50: #eaf8f0;
+  --color-emerald-100: #d3f1e1;
+  --color-emerald-600: #1f9d5c;
+  --color-emerald-700: #08774a;
+  --color-emerald-800: #065f3b;
 }
 
 body {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: #eef6f0;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
+
+h1, h2, h3 { font-family: var(--font-head), Inter, system-ui, sans-serif; letter-spacing: -0.01em; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.vector-rule { height: 3px; background: var(--gradient-vector); }
 
 .lqs-marker {
   width: 26px;
   height: 26px;
   border-radius: 9999px;
-  background: #0f172a;
+  background: #0a3b3f;
   color: #fff;
-  font: 600 13px/26px var(--font-geist-sans), sans-serif;
+  font: 600 13px/26px var(--font-inter), sans-serif;
   text-align: center;
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
   cursor: pointer;
 }
-.lqs-marker.voorkeur { background: #059669; }
+.lqs-marker.voorkeur { background: #08774a; width: auto; min-width: 28px; padding: 0 8px; border-radius: 14px; border-width: 3px; z-index: 2; font-weight: 700; }
 .lqs-marker.afgevallen { background: #b91c1c; }
 .lqs-marker.nieuw { background: #64748b; }
-.lqs-marker.net { background: #facc15; color: #0f172a; }
+.lqs-marker.net { background: #f5a623; color: #052326; }
 
 .veld {
   width: 100%;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c3d6cd;
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 14px;
   background: #fff;
 }
-.veld:focus { outline: 2px solid #059669; outline-offset: -1px; }
+.veld:focus { outline: 2px solid #0bbcae; outline-offset: -1px; }
 .knop {
   border-radius: 6px;
   padding: 7px 12px;
   font-size: 14px;
   font-weight: 500;
-  background: #0f172a;
-  color: #fff;
+  background: #f5a623;
+  color: #052326;
+  font-weight: 600;
+  transition: background-color .15s ease, transform .15s ease;
 }
+.knop:hover:not(:disabled) { background: #ffb93d; }
 .knop:disabled { opacity: 0.45; }
-.knop.groen { background: #047857; }
-.knop.licht { background: #fff; color: #0f172a; border: 1px solid #cbd5e1; }
-.kaartje { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+.knop.groen { background: #0a3b3f; color: #fff; }
+.knop.groen:hover:not(:disabled) { background: #0a8a80; }
+.knop.licht { background: #fff; color: #0a3b3f; border: 1px solid #c3d6cd; }
+.knop.licht:hover:not(:disabled) { background: #eef6f0; }
+.kaartje { background: #fff; border: 1px solid #d9e8e1; border-radius: 8px; }
 
 @media print {
   body { background: #fff; }
